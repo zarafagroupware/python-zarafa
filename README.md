@@ -42,11 +42,11 @@ print user.properties(), user.store.properties()
 # Example script listing folders of users
 The following script lists the all the folders of all users on a remote server using SSL.
 
- python scripts/list-folder-size.py -s https://remoteip:237/zarafa -k ~/ssl/server.pem -p password
+    python scripts/list-folder-size.py -s https://remoteip:237/zarafa -k ~/ssl/server.pem -p password
 
 Or using the /etc/zarafa/admin.cfg configuration file and specifying a user
 
- python scripts/list-folder-size.py -c /etc/zarafa/admin.cfg --user user1
+    python scripts/list-folder-size.py -c /etc/zarafa/admin.cfg --user user1
 
 Contents of list-folder-size.py
 
