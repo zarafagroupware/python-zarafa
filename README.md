@@ -10,7 +10,8 @@ python-zarafa depends on the following modules:
 
 # Installation
 To install python-zarafa just simply run the following command.
- python setup.py install
+
+    python setup.py install
 
 # Usage
 
