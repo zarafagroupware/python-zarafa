@@ -258,6 +258,11 @@ class Company(object):
     def __init__(self, server, name):
         self.server = server
         self.name = name
+        if name != u'Default': # XXX
+            try:
+                self._eccompany = self.server.sa.GetCompany(self.server.sa.ResolveCompanyName(str(self.name), 0), 0) # XXX unicode?
+            except MAPIErrorNotFound:
+                raise ZarafaException("no such company: '%s'" % name)
 
     @property
     def public_store(self):
@@ -283,6 +288,10 @@ class Company(object):
     def create_user(self, name, password=None):
         self.server.create_user(name, password=password, company=self.name)
         return self.user('%s@%s' % (name, self.name))
+
+    @property
+    def quota(self):
+        return self.server.sa.GetQuota(self._eccompany.CompanyID, False)
 
     def __unicode__(self):
         return u'Company(%s)' % self.name
@@ -348,6 +357,10 @@ class Store(object):
                     for subfolder in folder.folders(recurse=True, depth=1):
                         if not filter_names or folder.name in filter_names:
                             yield subfolder
+
+    @property
+    def size(self):
+        return HrGetOneProp(self.mapistore, PR_MESSAGE_SIZE_EXTENDED).Value
 
     def properties(self):
         return _properties(self.mapistore)
@@ -602,6 +615,16 @@ class Item(object):
         except MAPIErrorNotFound:
             return {}
 
+    def recipients(self):
+        table = self.mapiitem.GetRecipientTable(0)
+        recipients = []
+        for recipient in table.QueryRows(50, 0):
+            temp = []
+            for prop in recipient:
+                temp.append(Property(self.mapiitem, prop.ulPropTag, prop.Value, PROP_TYPE(prop.ulPropTag)))
+            recipients.append(temp)
+        return recipients
+
     def eml(self):
         if not self.emlfile:
             sopt = inetmapi.sending_options()
@@ -734,14 +757,6 @@ class User(object):
             pass
 
     @property
-    def quota_used(self): # XXX class Quota?
-        st = self.server.mapistore.OpenProperty(PR_EC_STATSTABLE_USERS, IID_IMAPITable, 0, 0)
-        rows = st.QueryRows(-1, 0)
-        for row in rows: # XXX refactor, generalize for other props, optimize..
-            if PpropFindProp(row, PR_EC_USERNAME_A).Value == self.name:
-                return PpropFindProp(row, PR_MESSAGE_SIZE_EXTENDED).Value
-
-    @property
     def archive_store(self):
         mapistore = self.store.mapistore
         ids = mapistore.GetIDsFromNames(NAMED_PROPS_ARCHIVER, 0) # XXX merge namedprops stuff
@@ -767,6 +782,10 @@ class User(object):
 
     def properties(self):
         return _properties(self.mapiuser)
+
+    @property
+    def quota(self):
+        return self.server.sa.GetQuota(self._ecuser.UserID, False)
 
     def __unicode__(self):
         return u'User(%s)' % self.name
