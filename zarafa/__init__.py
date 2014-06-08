@@ -1,10 +1,14 @@
+#!/usr/bin/env python
 # python-zarafa: high-level Python bindings to Zarafa
 #
 # Copyright 2014 Zarafa and contributors, license AGPLv3 (see LICENSE file for details)
 #
 
 import contextlib
-import daemon.pidlockfile
+try:
+    import daemon.pidlockfile
+except:
+    pass
 import datetime
 import grp
 import logging.handlers
@@ -54,15 +58,18 @@ except NameError:
 PSETID_Archive = DEFINE_GUID(0x72e98ebc, 0x57d2, 0x4ab5, 0xb0, 0xaa, 0xd5, 0x0a, 0x7b, 0x53, 0x1c, 0xb9)
 NAMED_PROPS_ARCHIVER = [MAPINAMEID(PSETID_Archive, MNID_STRING, u'store-entryids'), MAPINAMEID(PSETID_Archive, MNID_STRING, u'item-entryids'), MAPINAMEID(PSETID_Archive, MNID_STRING, u'stubbed'),]
 
-def _properties(mapiobj):
+GUID_NAMESPACE = {PSETID_Archive: 'archive'}
+NAMESPACE_GUID = {'archive': PSETID_Archive}
+
+def _properties(mapiobj, namespace=None):
     result = []
     proptags = mapiobj.GetPropList(MAPI_UNICODE)
     props = mapiobj.GetProps(proptags, MAPI_UNICODE)
     for prop in props:
-        if prop.ulPropTag in REV_TAG:
-            result.append((REV_TAG[prop.ulPropTag], prop.ulPropTag, prop.Value, PROP_TYPE(prop.ulPropTag)))
+        result.append((prop.ulPropTag, prop.Value, PROP_TYPE(prop.ulPropTag)))
     result.sort()
-    return [Property(mapiobj, b,c,d) for (a,b,c,d) in result]
+    props1 =[Property(mapiobj,b,c,d) for (b,c,d) in result]
+    return [p for p in props1 if not namespace or p.namespace==namespace]
 
 def _sync(server, syncobj, importer, state, log):
     importer = TrackingContentsImporter(server, importer, log)
@@ -209,6 +216,14 @@ class Server(object):
              yield Store(self, self.mapisession.OpenMsgStore(0, row[1].Value, None, MDB_WRITE), row[2].Value == ECSTORE_TYPE_PUBLIC)
 
     @property
+    def public_store(self):
+        try:
+            self.sa.GetCompanyList(0)
+            raise ZarafaException('request for server-wide public store in multi-company setup')
+        except MAPIErrorNoSupport:
+            return self.companies().next().public_store
+
+    @property
     def state(self):
         exporter = self.mapistore.OpenProperty(PR_CONTENTS_SYNCHRONIZER, IID_IExchangeExportChanges, 0, 0)
         exporter.Config(None, SYNC_NORMAL | SYNC_CATCHUP, None, None, None, None, 0)
@@ -246,8 +261,11 @@ class Company(object):
 
     @property
     def public_store(self):
-        if self.name == u'Default':
-            return Store(self.server, GetPublicStore(self.server.mapisession), True)
+        if self.name == u'Default': # XXX 
+            pubstore = GetPublicStore(self.server.mapisession)
+            if pubstore is None:
+                return None
+            return Store(self.server, pubstore, True)
         publicstoreid = self.server.ems.CreateStoreEntryID(None, self.name, 0)
         publicstore = self.server.mapisession.OpenMsgStore(0, publicstoreid, None, MDB_WRITE)
         return Store(self.server, publicstore, True)
@@ -290,6 +308,11 @@ class Store(object):
     def calendar(self):
         root = self.mapistore.OpenEntry(None, None, 0)
         return Folder(self, HrGetOneProp(root, PR_IPM_APPOINTMENT_ENTRYID).Value)
+
+    @property
+    def contacts(self):
+        root = self.mapistore.OpenEntry(None, None, 0)
+        return Folder(self, HrGetOneProp(root, PR_IPM_CONTACT_ENTRYID).Value)
 
     def folder(self, name): # XXX slow
         matches = [f for f in self.folders() if f.name == name]
@@ -345,6 +368,10 @@ class Folder(object):
     @property
     def entryid(self):
         return bin2hex(self._entryid)
+
+    @property
+    def folderid(self):
+        return HrGetOneProp(self.mapifolder, PR_EC_HIERARCHYID).Value
 
     @property
     def name(self):
@@ -526,8 +553,8 @@ class Item(object):
         except MAPIErrorNotFound:
             pass
 
-    def properties(self):
-        return _properties(self.mapiitem)
+    def properties(self, namespace=None):
+        return _properties(self.mapiitem, namespace)
  
     @property
     def stubbed(self): # XXX check does not always work correctly yet
@@ -538,9 +565,15 @@ class Item(object):
         except MAPIErrorNotFound:
             return False
 
-    def property(self, proptag):
-        mapiprop = HrGetOneProp(self.mapiitem, proptag)
-        return Property(self.mapiitem, proptag, mapiprop.Value, PROP_TYPE(proptag))
+    def property_(self, proptag):
+        if isinstance(proptag, (int, long)):
+            mapiprop = HrGetOneProp(self.mapiitem, proptag)
+            return Property(self.mapiitem, proptag, mapiprop.Value, PROP_TYPE(proptag))
+        else:
+            namespace, name = proptag.split(':')
+            for prop in self.properties(namespace=namespace):
+                if prop.name == name:
+                    return prop
 
     def attachments(self, embedded=False):
         mapiitem = self._arch_item
@@ -563,7 +596,7 @@ class Item(object):
     def headers(self):
         # Fetches the mail headers and returns a dict
         try:
-            message_headers = self.property(PR_TRANSPORT_MESSAGE_HEADERS)
+            message_headers = self.property_(PR_TRANSPORT_MESSAGE_HEADERS)
             headers = Parser().parsestr(message_headers.value, headersonly=True)
             return headers
         except MAPIErrorNotFound:
@@ -586,12 +619,26 @@ class Property(object):
     def __init__(self, mapiobj, proptag, value, proptype):
         self.mapiobj = mapiobj
         self.proptag = proptag
-        self._value = value
-        self.proptype = REV_TYPE[proptype]
 
-    @property
-    def name(self):
-        return REV_TAG.get(self.proptag, hex(self.proptag).upper())
+        self.id_ = proptag >> 16
+        self.idname = REV_TAG.get(proptag)
+        self.type_ = proptype
+        self.typename = REV_TYPE.get(proptype)
+
+        self.named = (self.id_ >= 0x8000)
+        self.kind = None
+        self.kindname = None
+        self.guid = None
+        self.name = None
+        self.namespace = None
+        self._value = value
+        if self.named:
+            lpname = mapiobj.GetNamesFromIDs([proptag], None, 0)[0]
+            self.guid = bin2hex(lpname.guid)
+            self.namespace = GUID_NAMESPACE.get(lpname.guid)
+            self.name = lpname.id
+            self.kind = lpname.kind
+            self.kindname = 'MNID_STRING' if lpname.kind == MNID_STRING else 'MNID_ID'
 
     def get_value(self):
         return self._value
@@ -602,7 +649,7 @@ class Property(object):
     value = property(get_value, set_value)
 
     def __unicode__(self):
-        return u'Property(%s, %s)' % (self.name, repr(self.value))
+        return u'Property(%s, %s)' % (self.name if self.named else self.idname, repr(self.value))
 
     # TODO: check if data is binary and convert it to hex
     def __repr__(self):
@@ -729,7 +776,7 @@ class User(object):
 
 class TrackingContentsImporter(ECImportContentsChanges):
     def __init__(self, server, importer, log):
-        ECImportContentsChanges.__init__(self, [IID_IExchangeImportContentsChanges])
+        ECImportContentsChanges.__init__(self, [IID_IExchangeImportContentsChanges, IID_IECImportContentsChanges])
         self.server = server
         self.importer = importer
         self.log = log
@@ -738,7 +785,6 @@ class TrackingContentsImporter(ECImportContentsChanges):
         self.ImportMessageChange(props, flags)
 
     def ImportMessageChange(self, props, flags):
-        print 'frut!', props
         try:
             entryid = PpropFindProp(props, PR_ENTRYID)
             if self.importer.store:
@@ -749,16 +795,20 @@ class TrackingContentsImporter(ECImportContentsChanges):
                 mapistore = self.server.mapisession.OpenMsgStore(0, store_entryid, None, 0)
             item = Item()
             item.server = self.server
-            item.mapiitem = mapistore.OpenEntry(entryid.Value, IID_IECMessageRaw, 0) # XXX MAPI_MODIFY
-            item.folderid = PpropFindProp(props, PR_EC_PARENT_HIERARCHYID).Value
-            props = item.mapiitem.GetProps([PR_EC_HIERARCHYID, PR_EC_PARENT_HIERARCHYID, PR_STORE_RECORD_KEY], 0) # XXX properties niet aanwezig?
-            item.docid = props[0].Value
+            try:
+                item.mapiitem = mapistore.OpenEntry(entryid.Value, IID_IECMessageRaw, 0) # XXX MAPI_MODIFY
+                item.folderid = PpropFindProp(props, PR_EC_PARENT_HIERARCHYID).Value
+                props = item.mapiitem.GetProps([PR_EC_HIERARCHYID, PR_EC_PARENT_HIERARCHYID, PR_STORE_RECORD_KEY], 0) # XXX properties niet aanwezig?
+                item.docid = props[0].Value
 #            item.folderid = props[1].Value # XXX 
-            item.storeid = bin2hex(props[2].Value)
-            self.importer.update(item, flags)
+                item.storeid = bin2hex(props[2].Value)
+                self.importer.update(item, flags)
+            except MAPIErrorNotFound:
+                if self.log:
+                    self.log.info('received change for entryid %s, but it does not exist anymore' % bin2hex(entryid.Value))
         except Exception, e:
             if self.log:
-                self.log.error('could not process change for entryid %s:' % bin2hex(entryid.Value))
+                self.log.error('could not process change for entryid %s (%r):' % (bin2hex(entryid.Value), props))
                 self.log.error(traceback.format_exc(e))
         raise MAPIError(SYNC_E_IGNORE)
 
@@ -796,9 +846,10 @@ def daemon_helper(func, service, log):
         if log and service:
             log.info('stopping %s' % service.name)
 
-def daemonize(func, options=None, foreground=False, args=[], log=None, config=None, service=None):
-    if log and service:
-        log.info('starting %s' % service.name)
+"""
+def daemonize(func, options=None, foreground=False, args=[], log=None, config=None):
+    if log and args:
+        log.info('starting %s' % args[0].name)
     if foreground or (options and options.foreground):
         try:
             if isinstance(service, Service): # XXX
@@ -834,6 +885,7 @@ def daemonize(func, options=None, foreground=False, args=[], log=None, config=No
                 prevent_core=False,
             ):
             daemon_helper(func, service, log)
+"""
 
 def logger(service, options=None, stdout=False, config=None, name=''):
     logger = logging.getLogger(name=name or service)
@@ -938,7 +990,9 @@ class ConfigOption:
     def parse_integer(self, key, value):
         if self.kwargs.get('options') is not None and int(value) not in self.kwargs.get('options'):
             raise ZarafaConfigException("%s: '%s' is not a legal value" % (key, value))
-        return int(value)
+        if self.kwargs.get('multiple') == True:
+            return [int(x, base=self.kwargs.get('base', 10)) for x in value.split()]
+        return int(value, base=self.kwargs.get('base', 10))
 
     def parse_boolean(self, key, value):
         return {'no': False, 'yes': True}[value]
