@@ -429,6 +429,17 @@ class Folder(object):
             mboxfile.add(item.eml())
         mboxfile.unlock()
 
+    def maildir(self):
+        destination = mailbox.MH(self.name)
+        destination.lock()
+        for item in self.items():
+            destination.add(item.eml())
+        destination.unlock()
+
+    def read_maildir(self, location):
+        for message in mailbox.MH(location):
+            newitem = Item(self,message.__str__())
+
     def __unicode__(self):
         return u'Folder(%s)' % self.name
 
