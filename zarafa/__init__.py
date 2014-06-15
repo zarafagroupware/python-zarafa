@@ -24,20 +24,13 @@ import traceback
 import mailbox
 from email.parser import Parser
 import signal
+import time
 
 from MAPI.Util import *
 from MAPI.Util.Generators import *
 import MAPI.Tags
 import _MAPICore
 import inetmapi
-
-"""
-TODO:
-    - expose MAPI tables in a general way
-    - caching, prefetching
-    - general Service class
-    - namedproperties
-"""
 
 try:
     REV_TYPE
@@ -71,19 +64,20 @@ def _properties(mapiobj, namespace=None):
     props1 =[Property(mapiobj,b,c,d) for (b,c,d) in result]
     return [p for p in props1 if not namespace or p.namespace==namespace]
 
-def _sync(server, syncobj, importer, state, log):
+def _sync(server, syncobj, importer, state, log, max_changes):
     importer = TrackingContentsImporter(server, importer, log)
     exporter = syncobj.OpenProperty(PR_CONTENTS_SYNCHRONIZER, IID_IExchangeExportChanges, 0, 0)
     stream = IStream()
     stream.Write(state.decode('hex'))
     stream.Seek(0, MAPI.STREAM_SEEK_SET)
     exporter.Config(stream, SYNC_NORMAL | SYNC_UNICODE, importer, None, None, None, 0)
-    step = retry = 0
+    step = retry = changes = 0
     while True:
         try:
             (steps, step) = exporter.Synchronize(step)
+            changes += 1
             retry = 0
-            if (steps == step):
+            if (steps == step) or (max_changes and changes >= max_changes):
                 break;
         except MAPIError, e:
             if retry < 5:
@@ -106,7 +100,7 @@ class ZarafaConfigException(Exception):
     pass
 
 class Server(object):
-    def __init__(self, options=None, config=None, sslkey_file=None, sslkey_pass=None, server_socket=None, log=None):
+    def __init__(self, options=None, config=None, sslkey_file=None, sslkey_pass=None, server_socket=None, log=None, service=None):
         self.log = log
         # default connection
         self.sslkey_file = sslkey_file
@@ -131,10 +125,16 @@ class Server(object):
         self.server_socket = getattr(self.options, 'server_socket', None) or self.server_socket
         self.sslkey_file = getattr(self.options, 'sslkey_file', None) or self.sslkey_file
         self.sslkey_pass = getattr(self.options, 'sslkey_pass', None) or self.sslkey_pass
-        try:
-            self.mapisession = OpenECSession('SYSTEM','', self.server_socket, sslkey_file=self.sslkey_file, sslkey_pass=self.sslkey_pass)
-        except MAPIErrorNetworkError:
-            raise ZarafaException("could not connect to server at '%s'" % self.server_socket)
+        while True:
+            try:
+                self.mapisession = OpenECSession('SYSTEM','', self.server_socket, sslkey_file=self.sslkey_file, sslkey_pass=self.sslkey_pass)
+                break
+            except MAPIErrorNetworkError:
+                if service:
+                    service.log.warn("could not connect to server at '%s', retrying in 5 sec" % self.server_socket)
+                    time.sleep(5)
+                else:
+                    raise ZarafaException("could not connect to server at '%s'" % self.server_socket)
         self.mapistore = GetDefaultStore(self.mapisession)
         self.admin_store = Store(self, self.mapistore)
         self.sa = self.mapistore.QueryInterface(IID_IECServiceAdmin)
@@ -244,9 +244,9 @@ class Server(object):
             return rows
         return []
 
-    def sync(self, importer, state, log=None):
+    def sync(self, importer, state, log=None, max_changes=None):
         importer.store = None
-        return _sync(self, self.mapistore, importer, state, log or self.log)
+        return _sync(self, self.mapistore, importer, state, log or self.log, max_changes)
 
     def __unicode__(self):
         return u'Server(%s)' % self.server_socket
@@ -291,7 +291,7 @@ class Company(object):
 
     @property
     def quota(self):
-        return self.server.sa.GetQuota(self._eccompany.CompanyID, False)
+        return Quota(self.server, self._eccompany.CompanyID)
 
     def __unicode__(self):
         return u'Company(%s)' % self.name
@@ -452,11 +452,11 @@ class Folder(object):
     def properties(self):
         return _properties(self.mapifolder)
 
-    def sync(self, importer, state=None, log=None):
+    def sync(self, importer, state=None, log=None, max_changes=None):
         if state is None:
             state = (8*'\0').encode('hex').upper()
         importer.store = self.store
-        return _sync(self.store.server, self.mapifolder, importer, state, log or self.log)
+        return _sync(self.store.server, self.mapifolder, importer, state, log or self.log, max_changes)
 
     def readmbox(self, location):
         for message in mailbox.mbox(location):
@@ -487,7 +487,7 @@ class Folder(object):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
 
 class Item(object):
-    def __init__(self, folder=None, eml=None):
+    def __init__(self, folder=None, eml=None, mail=None):
         # TODO: self.folder fix this!
         self.emlfile = eml
         if folder is not None:
@@ -785,13 +785,26 @@ class User(object):
 
     @property
     def quota(self):
-        return self.server.sa.GetQuota(self._ecuser.UserID, False)
+        return Quota(self.server, self._ecuser.UserID)
 
     def __unicode__(self):
         return u'User(%s)' % self.name
 
     def __repr__(self):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
+
+class Quota(object):
+    def __init__(self, server, userid):
+        self.server = server
+        self.userid = userid
+        quota = server.sa.GetQuota(userid, False)
+        self.warn_limit = quota.llWarnSize
+        self.soft_limit = quota.llSoftSize
+        self.hard_limit = quota.llHardSize
+
+    @property
+    def recipients(self):
+        return [self.server.user(ecuser.Username) for ecuser in self.server.sa.GetQuotaRecipients(self.userid, 0)]
 
 class TrackingContentsImporter(ECImportContentsChanges):
     def __init__(self, server, importer, log):
@@ -865,10 +878,9 @@ def daemon_helper(func, service, log):
         if log and service:
             log.info('stopping %s' % service.name)
 
-"""
-def daemonize(func, options=None, foreground=False, args=[], log=None, config=None):
-    if log and args:
-        log.info('starting %s' % args[0].name)
+def daemonize(func, options=None, foreground=False, args=[], log=None, config=None, service=None):
+    if log and service:
+        log.info('starting %s' % service.name)
     if foreground or (options and options.foreground):
         try:
             if isinstance(service, Service): # XXX
@@ -904,7 +916,6 @@ def daemonize(func, options=None, foreground=False, args=[], log=None, config=No
                 prevent_core=False,
             ):
             daemon_helper(func, service, log)
-"""
 
 def logger(service, options=None, stdout=False, config=None, name=''):
     logger = logging.getLogger(name=name or service)
@@ -961,6 +972,17 @@ def log_exc(log):
     try: yield
     except Exception, e: log.error(traceback.format_exc(e))
 
+def _bytes_to_human(b):
+    suffixes = ['b', 'kb', 'mb', 'gb', 'tb', 'pb']
+    if b == 0: return '0 b'
+    i = 0
+    len_suffixes = len(suffixes)-1
+    while b >= 1024 and i < len_suffixes:
+        b /= 1024
+        i += 1
+    f = ('%.2f' % b).rstrip('0').rstrip('.')
+    return '%s %s' % (f, suffixes[i])
+
 def _human_to_bytes(s):
     '''
     Author: Giampaolo Rodola' <g.rodola [AT] gmail [DOT] com>
@@ -1014,7 +1036,7 @@ class ConfigOption:
         return int(value, base=self.kwargs.get('base', 10))
 
     def parse_boolean(self, key, value):
-        return {'no': False, 'yes': True}[value]
+        return {'no': False, 'yes': True, '0': False, '1': True, 'false': False, 'true': True}[value]
 
     def parse_size(self, key, value):
         return _human_to_bytes(value)
@@ -1022,6 +1044,9 @@ class ConfigOption:
 class Config:
     def __init__(self, config, service=None, options=None, filename=None, log=None):
         self.config = config
+        self.service = service
+        self.warnings = []
+        self.errors = []
         if filename:
             pass
         elif options and getattr(options, 'config_file', None):
@@ -1031,7 +1056,7 @@ class Config:
         self.data = {}
         if self.config is not None:
             for key, val in self.config.items():
-                if val.kwargs.get('default') is not None:
+                if 'default' in val.kwargs:
                     self.data[key] = val.kwargs.get('default')
         for line in file(filename):
             line = line.strip().decode('utf-8')
@@ -1043,11 +1068,31 @@ class Config:
                     if self.config is None:
                         self.data[key] = value
                     elif key in self.config:
-                        self.data[key] = self.config[key].parse(key, value)
+                        if self.config[key].type_ == 'ignore':
+                            self.data[key] = None
+                            self.warnings.append('%s: config option ignored' % key)
+                        else:
+                            try:
+                                self.data[key] = self.config[key].parse(key, value)
+                            except ZarafaConfigException, e:
+                                if service:
+                                    self.errors.append(e.message)
+                                else:
+                                    raise
+                    else:
+                        msg = "%s: unknown config option" % key
+                        if service:
+                            self.warnings.append(msg)
+                        else:
+                            raise ZarafaConfigException(msg)
         if self.config is not None:
             for key, val in self.config.items():
                 if key not in self.data:
-                    raise ZarafaConfigException("missing option: '%s'" % key)
+                    msg = "%s: missing in config file" % key
+                    if service: # XXX merge
+                        self.errors.append(msg)
+                    else:
+                        raise ZarafaConfigException(msg)
 
     @staticmethod
     def string(**kwargs):
@@ -1069,6 +1114,10 @@ class Config:
     def size(**kwargs):
         return ConfigOption(type_='size', **kwargs)
 
+    @staticmethod
+    def ignore(**kwargs):
+        return ConfigOption(type_='ignore', **kwargs)
+
     def get(self, x, default=None):
         return self.data.get(x, default)
 
@@ -1076,15 +1125,17 @@ class Config:
         return self.data[x]
 
 CONFIG = {
-    'server_socket': Config.string(),
-    'log_method': Config.string(options=['file', 'syslog']),
+    'log_method': Config.string(options=['file', 'syslog'], default='file'),
     'log_level': Config.integer(options=range(7), default=2),
-    'log_file': Config.string(),
+    'log_file': Config.string(default=None),
     'log_timestamp': Config.integer(options=[0,1], default=1),
-    'run_as_user': Config.string(),
-    'run_as_group': Config.string(),
-    'pid_file': Config.string(),
+    'pid_file': Config.string(default=None),
+    'run_as_user': Config.string(default=None),
+    'run_as_group': Config.string(default=None),
     'running_path': Config.string(check_path=True, default='/'),
+    'server_socket': Config.string(default=None),
+    'sslkey_file': Config.string(default=None),
+    'sslkey_pass': Config.string(default=None),
 }
 
 # log-to-queue handler copied from Vinay Sajip
@@ -1181,11 +1232,17 @@ class Service:
             options.config_file = os.path.abspath(options.config_file) # XXX useful during testing. could be generalized with optparse callback?
         self.config = Config(config2, service=name, options=options)
         self.config.data['server_socket'] = os.getenv('ZARAFA_SOCKET') or self.config.data['server_socket']
-        self.log = logger(self.name, options=self.options, config=self.config) # check that this works here or daemon may die silently
+        self.log = logger(self.name, options=self.options, config=self.config) # check that this works here or daemon may die silently XXX check run_as_user..?
+        for msg in self.config.warnings:
+            self.log.warn(msg)
+        if self.config.errors:
+            for msg in self.config.errors:
+                self.log.error(msg)
+            sys.exit(1)
 
     @property
     def server(self):
-        return Server(options=self.options, config=self.config.data, log=self.log)
+        return Server(options=self.options, config=self.config.data, log=self.log, service=self)
 
     def start(self):
         for sig in (signal.SIGTERM, signal.SIGINT):
