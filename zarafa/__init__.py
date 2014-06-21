@@ -11,6 +11,10 @@ except:
     pass
 import datetime
 import grp
+try:
+    import libcommon # XXX distribute with python-mapi?
+except:
+    pass
 import logging.handlers
 from multiprocessing import Process, Queue
 from Queue import Empty
@@ -93,6 +97,12 @@ def _sync(server, syncobj, importer, state, log, max_changes):
     state = bin2hex(stream.Read(0xFFFFF))
     return state
 
+def _openentry_raw(mapistore, entryid, flags):
+    try:
+        return mapistore.OpenEntry(entryid, IID_IECMessageRaw, flags)
+    except MAPIErrorInterfaceNotSupported: # XXX can we do this simpler/faster?
+        return mapistore.OpenEntry(entryid, None, flags)
+
 class ZarafaException(Exception):
     pass
 
@@ -116,7 +126,7 @@ class Server(object):
         if not self.options:
             self.options, args = parser('skpcumfF').parse_args() # XXX store args?
         if getattr(self.options, 'config_file', None):
-            self.options.config_file = os.path.abspath(options.config_file) # XXX useful during testing. could be generalized with optparse callback?
+            self.options.config_file = os.path.abspath(self.options.config_file) # XXX useful during testing. could be generalized with optparse callback?
         if getattr(self.options, 'config_file', None):
             cfg = globals()['Config'](None, filename=self.options.config_file) # XXX ugh
             self.server_socket = cfg.get('server_socket') or self.server_socket
@@ -291,7 +301,10 @@ class Company(object):
 
     @property
     def quota(self):
-        return Quota(self.server, self._eccompany.CompanyID)
+        if self.name == u'Default':
+            return Quota(self.server, None)
+        else:
+            return Quota(self.server, self._eccompany.CompanyID)
 
     def __unicode__(self):
         return u'Company(%s)' % self.name
@@ -362,6 +375,11 @@ class Store(object):
     def size(self):
         return HrGetOneProp(self.mapistore, PR_MESSAGE_SIZE_EXTENDED).Value
 
+    def config_item(self, name):
+        item = Item()
+        item.mapiitem = libcommon.GetConfigMessage(self.mapistore, 'Zarafa.Quota')
+        return item
+
     def properties(self):
         return _properties(self.mapistore)
 
@@ -400,7 +418,7 @@ class Folder(object):
                 item = Item()
                 item.store = self.store
                 item.server = self.server
-                item.mapiitem = self.mapifolder.OpenEntry(PpropFindProp(row, PR_ENTRYID).Value, IID_IECMessageRaw, MAPI_MODIFY)
+                item.mapiitem = _openentry_raw(self.store.mapistore, PpropFindProp(row, PR_ENTRYID).Value, MAPI_MODIFY)
                 yield item
 
     def create_item(self, eml=None):
@@ -671,6 +689,12 @@ class Property(object):
         self.mapiobj.SaveChanges(0)
     value = property(get_value, set_value)
 
+    @property
+    def pyval(self): # XXX merge with 'value'?
+        if PROP_TYPE(self.proptag) == PT_SYSTIME: # XXX generalize
+            return datetime.datetime.utcfromtimestamp(self._value.unixtime)
+        return self._value
+
     def __unicode__(self):
         return u'Property(%s, %s)' % (self.name if self.named else self.idname, repr(self.value))
 
@@ -739,6 +763,10 @@ class User(object):
         return bin2hex(self._ecuser.UserID)
 
     @property
+    def fullname(self):
+        return self._ecuser.FullName
+
+    @property
     def company(self):
         return Company(self.server, HrGetOneProp(self.mapiuser, PR_EC_COMPANY_NAME).Value or u'Default')
 
@@ -797,14 +825,19 @@ class Quota(object):
     def __init__(self, server, userid):
         self.server = server
         self.userid = userid
-        quota = server.sa.GetQuota(userid, False)
-        self.warn_limit = quota.llWarnSize
-        self.soft_limit = quota.llSoftSize
-        self.hard_limit = quota.llHardSize
+        self.warn_limit = self.soft_limit = self.hard_limit = 0 # XXX quota for 'default' company?
+        if userid:
+            quota = server.sa.GetQuota(userid, False)
+            self.warn_limit = quota.llWarnSize
+            self.soft_limit = quota.llSoftSize
+            self.hard_limit = quota.llHardSize
 
     @property
     def recipients(self):
-        return [self.server.user(ecuser.Username) for ecuser in self.server.sa.GetQuotaRecipients(self.userid, 0)]
+        if self.userid:
+            return [self.server.user(ecuser.Username) for ecuser in self.server.sa.GetQuotaRecipients(self.userid, 0)]
+        else:
+            return []
 
 class TrackingContentsImporter(ECImportContentsChanges):
     def __init__(self, server, importer, log):
@@ -822,22 +855,22 @@ class TrackingContentsImporter(ECImportContentsChanges):
             if self.importer.store:
                 mapistore = self.importer.store.mapistore
             else:
-                store_entryid = PpropFindProp(props, PR_STORE_ENTRYID).Value # XXX merge needed code to 7.1?
+                store_entryid = PpropFindProp(props, PR_STORE_ENTRYID).Value
                 store_entryid = WrapStoreEntryID(0, 'zarafa6client.dll', store_entryid[:-4])+self.server.pseudo_url+'\x00'
                 mapistore = self.server.mapisession.OpenMsgStore(0, store_entryid, None, 0)
             item = Item()
             item.server = self.server
             try:
-                item.mapiitem = mapistore.OpenEntry(entryid.Value, IID_IECMessageRaw, 0) # XXX MAPI_MODIFY
+                item.mapiitem = _openentry_raw(mapistore, entryid.Value, 0)
                 item.folderid = PpropFindProp(props, PR_EC_PARENT_HIERARCHYID).Value
                 props = item.mapiitem.GetProps([PR_EC_HIERARCHYID, PR_EC_PARENT_HIERARCHYID, PR_STORE_RECORD_KEY], 0) # XXX properties niet aanwezig?
                 item.docid = props[0].Value
 #            item.folderid = props[1].Value # XXX 
                 item.storeid = bin2hex(props[2].Value)
                 self.importer.update(item, flags)
-            except MAPIErrorNotFound:
+            except MAPIErrorNotFound, MAPIErrorNoAccess: # XXX, mail already deleted, can we do this in a cleaner way?
                 if self.log:
-                    self.log.info('received change for entryid %s, but it does not exist anymore' % bin2hex(entryid.Value))
+                    self.log.debug('received change for entryid %s, but it could not be opened' % bin2hex(entryid.Value))
         except Exception, e:
             if self.log:
                 self.log.error('could not process change for entryid %s (%r):' % (bin2hex(entryid.Value), props))
@@ -1017,11 +1050,19 @@ class ConfigOption:
         return getattr(self, 'parse_'+self.type_)(key, value)
 
     def parse_string(self, key, value):
-        if self.kwargs.get('check_path') is True and not os.path.exists(value): # XXX moved to parse_path
-            raise ZarafaConfigException("%s: path '%s' does not exist" % (key, value))
-        if self.kwargs.get('options') is not None and value not in self.kwargs.get('options'):
-            raise ZarafaConfigException("%s: '%s' is not a legal value" % (key, value))
-        return value
+        if self.kwargs.get('multiple') == True:
+            values = value.split()
+        else:
+            values = [value]
+        for value in values:
+            if self.kwargs.get('check_path') is True and not os.path.exists(value): # XXX moved to parse_path
+                raise ZarafaConfigException("%s: path '%s' does not exist" % (key, value))
+            if self.kwargs.get('options') is not None and value not in self.kwargs.get('options'):
+                raise ZarafaConfigException("%s: '%s' is not a legal value" % (key, value))
+        if self.kwargs.get('multiple') == True:
+            return values
+        else:
+            return values[0]
 
     def parse_path(self, key, value):
         if self.kwargs.get('check', True) and not os.path.exists(value):
@@ -1087,7 +1128,7 @@ class Config:
                             raise ZarafaConfigException(msg)
         if self.config is not None:
             for key, val in self.config.items():
-                if key not in self.data:
+                if key not in self.data and val.type_ != 'ignore':
                     msg = "%s: missing in config file" % key
                     if service: # XXX merge
                         self.errors.append(msg)
@@ -1271,18 +1312,28 @@ class Worker(Process):
         with log_exc(self.log):
             self.main()
 
-def server_socket(addr, log=None): # XXX support http(s)
-    addr = addr.replace('file://', '')
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    os.system('rm -f %s' % addr)
-    s.bind(addr)
+def server_socket(addr, log=None): # XXX https, merge code with client_socket
+    if addr.startswith('file://'):
+        addr2 = addr.replace('file://', '')
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        os.system('rm -f %s' % addr2)
+    else:
+        addr2 = addr.replace('http://', '').split(':')
+        addr2 = (addr2[0], int(addr2[1]))
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(addr2)
     s.listen(5)
     if log:
         log.info('listening on socket %s' % addr)
     return s
 
 def client_socket(addr, log=None):
-    addr = addr.replace('file://', '')
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.connect(addr)
+    if addr.startswith('file://'):
+        addr2 = addr.replace('file://', '')
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    else:
+        addr2 = addr.replace('http://', '').split(':')
+        addr2 = (addr2[0], int(addr2[1]))
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect(addr2)
     return s
