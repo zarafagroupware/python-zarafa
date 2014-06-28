@@ -28,6 +28,7 @@ import traceback
 import mailbox
 from email.parser import Parser
 import signal
+import ssl
 import time
 
 from MAPI.Util import *
@@ -57,6 +58,16 @@ NAMED_PROPS_ARCHIVER = [MAPINAMEID(PSETID_Archive, MNID_STRING, u'store-entryids
 
 GUID_NAMESPACE = {PSETID_Archive: 'archive'}
 NAMESPACE_GUID = {'archive': PSETID_Archive}
+
+def _property(self, mapiobj, proptag):
+    if isinstance(proptag, (int, long)):
+        mapiprop = HrGetOneProp(mapiobj, proptag)
+        return Property(mapiobj, proptag, mapiprop.Value, PROP_TYPE(proptag))
+    else:
+        namespace, name = proptag.split(':')
+        for prop in self.properties(namespace=namespace): # XXX megh
+            if prop.name == name:
+                return prop
 
 def _properties(mapiobj, namespace=None):
     result = []
@@ -154,6 +165,40 @@ class Server(object):
         self.name = self.pseudo_url[9:]
         self._archive_sessions = {}
 
+    # General zarafa stats tables
+    # PR_EC_STATSTABLE_SYSTEM, PR_EC_STATSTABLE_SESSIONS,
+    # PR_EC_STATSTABLE_USERS, PR_EC_STATSTABLE_COMPANY, PR_EC_STATSTABLE_SERVERS
+    def _stats(self, table):
+        props = []
+        st = self.mapistore.OpenProperty(table, IID_IMAPITable, 0, 0)
+        try:
+            rows = st.QueryRows(-1, 0)
+            for row in rows:
+                temp = []
+                for column in row:
+                    prop = Property(self.mapistore, column.ulPropTag, column.Value, PROP_TYPE(column.ulPropTag))
+                    temp.append(prop)
+                props.append(temp)
+        except MAPIErrorNotFound:
+            pass
+
+        return props
+
+    def stats_servers(self):
+        return self._stats(PR_EC_STATSTABLE_SERVERS)
+
+    def stats_users(self):
+        return self._stats(PR_EC_STATSTABLE_USERS)
+
+    def stats_system(self):
+        return self._stats(PR_EC_STATSTABLE_SYSTEM)
+
+    def stats_company(self):
+        return self._stats(PR_EC_STATSTABLE_COMPANY)
+
+    def stats_sessions(self):
+        return self._stats(PR_EC_STATSTABLE_SESSIONS)
+
     def statstable_servers(self):
         st = self.mapistore.OpenProperty(PR_EC_STATSTABLE_SERVERS, IID_IMAPITable, 0, 0)
         st.SortTable(SSortOrderSet([SSort(PR_EC_STATS_SERVER_NAME, TABLE_SORT_ASCEND)], 0, 0), 0)
@@ -219,11 +264,19 @@ class Server(object):
         companyeid = self.sa.CreateCompany(company, 0)
         return self.company(name)
 
-    def stores(self, remote=True):
+    def store(self, guid): # XXX not unique across servers?
+        table = self.ems.GetMailboxTable(None, 0) # XXX merge with Store.__init__
+        table.SetColumns([PR_ENTRYID, PR_EC_STORETYPE], 0)
+        table.Restrict(SPropertyRestriction(RELOP_EQ, PR_STORE_RECORD_KEY, SPropValue(PR_STORE_RECORD_KEY, guid.decode('hex'))), TBL_BATCH)
+        for row in table.QueryRows(-1, 0):
+             return Store(self, self.mapisession.OpenMsgStore(0, row[0].Value, None, MDB_WRITE), row[1].Value == ECSTORE_TYPE_PUBLIC)
+
+    def stores(self, system=False):
         table = self.ems.GetMailboxTable(None, 0)
         table.SetColumns([PR_DISPLAY_NAME_W, PR_ENTRYID, PR_EC_STORETYPE], 0)
         for row in table.QueryRows(100, 0):
-             yield Store(self, self.mapisession.OpenMsgStore(0, row[1].Value, None, MDB_WRITE), row[2].Value == ECSTORE_TYPE_PUBLIC)
+             if system or row[0].Value != 'Inbox - SYSTEM': # XXX improve check..
+                 yield Store(self, self.mapisession.OpenMsgStore(0, row[1].Value, None, MDB_WRITE), row[2].Value == ECSTORE_TYPE_PUBLIC)
 
     @property
     def public_store(self):
@@ -337,13 +390,21 @@ class Store(object):
         return Folder(self, HrGetOneProp(root, PR_IPM_CONTACT_ENTRYID).Value)
 
     def folder(self, name): # XXX slow
-        matches = [f for f in self.folders() if f.name == name]
+        matches = [f for f in self.folders(recurse=True) if f.name == name]
         if len(matches) == 0:
             raise ZarafaException("no such folder: '%s'" % name)
         elif len(matches) > 1:
             raise ZarafaException("multiple folders with name '%s'" % name)
         else:
             return matches[0]
+
+    @property
+    def user(self):
+        try:
+            userid = HrGetOneProp(self.mapistore, PR_MAILBOX_OWNER_ENTRYID).Value
+            return User(self.server, self.server.sa.GetUser(userid, 0).Username)
+        except MAPIErrorNotFound:
+            pass
 
     def folders(self, recurse=False, system=False, parse=False):
         filter_names = None
@@ -352,7 +413,10 @@ class Store(object):
         if system:
             root = self.mapistore.OpenEntry(None, None, 0)
         else:
-            ipmsubtreeid = self.mapistore.GetProps([PR_IPM_SUBTREE_ENTRYID], 0)[0]
+            if self.public:
+                ipmsubtreeid = self.mapistore.GetProps([PR_IPM_PUBLIC_FOLDERS_ENTRYID], 0)[0]
+            else:
+                ipmsubtreeid = self.mapistore.GetProps([PR_IPM_SUBTREE_ENTRYID], 0)[0]
             root = self.mapistore.OpenEntry(ipmsubtreeid.Value, IID_IMAPIFolder, MAPI_DEFERRED_ERRORS)
         table = root.GetHierarchyTable(0)
         table.SetColumns([PR_ENTRYID], TBL_BATCH)
@@ -379,6 +443,9 @@ class Store(object):
         item = Item()
         item.mapiitem = libcommon.GetConfigMessage(self.mapistore, 'Zarafa.Quota')
         return item
+
+    def property_(self, proptag):
+        return _property(self, self.mapistore, proptag)
 
     def properties(self):
         return _properties(self.mapistore)
@@ -466,6 +533,9 @@ class Folder(object):
 
     def create_folder(self, name):
         return self.mapifolder.CreateFolder(FOLDER_GENERIC, name, '', None, 0)
+
+    def property_(self, proptag):
+        return _property(self, self.mapifolder, proptag)
 
     def properties(self):
         return _properties(self.mapifolder)
@@ -584,9 +654,6 @@ class Item(object):
         except MAPIErrorNotFound:
             pass
 
-    def properties(self, namespace=None):
-        return _properties(self.mapiitem, namespace)
- 
     @property
     def stubbed(self): # XXX check does not always work correctly yet
         ids = self.mapiitem.GetIDsFromNames(NAMED_PROPS_ARCHIVER, 0) # XXX cache folder.GetIDs..?
@@ -597,14 +664,10 @@ class Item(object):
             return False
 
     def property_(self, proptag):
-        if isinstance(proptag, (int, long)):
-            mapiprop = HrGetOneProp(self.mapiitem, proptag)
-            return Property(self.mapiitem, proptag, mapiprop.Value, PROP_TYPE(proptag))
-        else:
-            namespace, name = proptag.split(':')
-            for prop in self.properties(namespace=namespace):
-                if prop.name == name:
-                    return prop
+        return _property(self, self.mapiitem, proptag)
+
+    def properties(self, namespace=None):
+        return _properties(self.mapiitem, namespace)
 
     def attachments(self, embedded=False):
         mapiitem = self._arch_item
@@ -633,7 +696,14 @@ class Item(object):
         except MAPIErrorNotFound:
             return {}
 
-    def recipients(self):
+    def eml(self):
+        if not self.emlfile:
+            sopt = inetmapi.sending_options()
+            sopt.no_recipients_workaround = True
+            self.emlfile = inetmapi.IMToINet(self.store.server.mapisession, None, self.mapiitem, sopt)
+        return self.emlfile
+
+    def recipients_table(self):
         table = self.mapiitem.GetRecipientTable(0)
         recipients = []
         for recipient in table.QueryRows(50, 0):
@@ -643,12 +713,16 @@ class Item(object):
             recipients.append(temp)
         return recipients
 
-    def eml(self):
-        if not self.emlfile:
-            sopt = inetmapi.sending_options()
-            sopt.no_recipients_workaround = True
-            self.emlfile = inetmapi.IMToINet(self.store.server.mapisession, None, self.mapiitem, sopt)
-        return self.emlfile
+    @property
+    def sender(self):
+        return Address(self.server, *(self.property_(p).value for p in (PR_SENT_REPRESENTING_ADDRTYPE, PR_SENT_REPRESENTING_NAME, PR_SENT_REPRESENTING_EMAIL_ADDRESS, PR_SENT_REPRESENTING_ENTRYID)))
+
+    def recipients(self):
+        result = []
+        for row in self.recipients_table():
+            row = dict([(x.proptag, x) for x in row])
+            result.append(Address(self.server, *(row[p].value for p in (PR_ADDRTYPE, PR_DISPLAY_NAME, PR_EMAIL_ADDRESS, PR_ENTRYID))))
+        return result
 
     def __unicode__(self):
         return u'Item(%s)' % self.subject
@@ -705,6 +779,9 @@ class Property(object):
 class Attachment(object):
     def __init__(self, att):
         self.att = att
+
+    def property_(self, proptag):
+        return _property(self, self.att, proptag)
 
     def properties(self):
         return _properties(self.att)
@@ -808,6 +885,9 @@ class User(object):
     def archive_servers(self):
        return HrGetOneProp(self.mapiuser, PR_EC_ARCHIVE_SERVERS).Value
 
+    def property_(self, proptag):
+        return _property(self, self.mapiuser, proptag)
+
     def properties(self):
         return _properties(self.mapiuser)
 
@@ -894,6 +974,25 @@ class TrackingContentsImporter(ECImportContentsChanges):
 
     def UpdateState(self, stream):
         pass
+
+class Address:
+    def __init__(self, server, addrtype, name, email, entryid):
+        self.server = server
+        self.addrtype = addrtype
+        self.name = name
+        self._email = email
+        self.entryid = entryid
+
+    @property
+    def email(self):
+        if self.addrtype == 'ZARAFA':
+            try:
+                mapiuser = self.server.mapisession.OpenEntry(self.entryid, None, 0)
+                return self.server.user(HrGetOneProp(mapiuser, PR_ACCOUNT).Value).email
+            except zarafa.ZarafaException:
+                return None # XXX 'Support Delft'??
+        else:
+            return self._email
 
 def daemon_helper(func, service, log):
     try:
@@ -1312,25 +1411,50 @@ class Worker(Process):
         with log_exc(self.log):
             self.main()
 
-def server_socket(addr, log=None): # XXX https, merge code with client_socket
+class _ZSocket: # XXX megh, double wrapper
+    def __init__(self, addr, ssl_key, ssl_cert):
+        self.ssl_key = ssl_key
+        self.ssl_cert = ssl_cert
+        self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.s.bind(addr)
+        self.s.listen(5)
+
+    def accept(self):
+        newsocket, fromaddr = self.s.accept()
+        connstream = ssl.wrap_socket(newsocket, server_side=True, keyfile=self.ssl_key, certfile=self.ssl_cert)
+        return connstream, fromaddr
+
+
+def server_socket(addr, ssl_key=None, ssl_cert=None, log=None): # XXX https, merge code with client_socket
     if addr.startswith('file://'):
         addr2 = addr.replace('file://', '')
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         os.system('rm -f %s' % addr2)
+        s.bind(addr2)
+        s.listen(5)
+    elif addr.startswith('https://'):
+        addr2 = addr.replace('https://', '').split(':')
+        addr2 = (addr2[0], int(addr2[1]))
+        s = _ZSocket(addr2, ssl_key=ssl_key, ssl_cert=ssl_cert)
     else:
         addr2 = addr.replace('http://', '').split(':')
         addr2 = (addr2[0], int(addr2[1]))
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind(addr2)
-    s.listen(5)
+        s.bind(addr2)
+        s.listen(5)
     if log:
         log.info('listening on socket %s' % addr)
     return s
 
-def client_socket(addr, log=None):
+def client_socket(addr, ssl_cert=None, log=None):
     if addr.startswith('file://'):
         addr2 = addr.replace('file://', '')
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    elif addr.startswith('https://'):
+        addr2 = addr.replace('https://', '').split(':')
+        addr2 = (addr2[0], int(addr2[1]))
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s = ssl.wrap_socket(s, ca_certs=ssl_cert, cert_reqs=ssl.CERT_REQUIRED)
     else:
         addr2 = addr.replace('http://', '').split(':')
         addr2 = (addr2[0], int(addr2[1]))
