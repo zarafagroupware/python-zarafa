@@ -470,7 +470,6 @@ class Store(object):
         else:
             return matches[0]
 
-    @property
     def folders(self, recurse=True, system=False, parse=False):
         filter_names = None
         if parse:
