@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # python-zarafa: high-level Python bindings to Zarafa
 #
 # Copyright 2014 Zarafa and contributors, license AGPLv3 (see LICENSE file for details)
@@ -144,12 +144,15 @@ class Property(object):
             self._value = value
 
         if self.named:
-            lpname = mapiobj.GetNamesFromIDs([proptag], None, 0)[0]
-            self.guid = bin2hex(lpname.guid)
-            self.namespace = GUID_NAMESPACE.get(lpname.guid)
-            self.name = lpname.id
-            self.kind = lpname.kind
-            self.kindname = 'MNID_STRING' if lpname.kind == MNID_STRING else 'MNID_ID'
+            try:
+                lpname = mapiobj.GetNamesFromIDs([proptag], None, 0)[0]
+                self.guid = bin2hex(lpname.guid)
+                self.namespace = GUID_NAMESPACE.get(lpname.guid)
+                self.name = lpname.id
+                self.kind = lpname.kind
+                self.kindname = 'MNID_STRING' if lpname.kind == MNID_STRING else 'MNID_ID'
+            except MAPIErrorNoSupport: # XXX user.props()?
+                pass
 
     def get_value(self):
         return self._value
@@ -521,11 +524,12 @@ class Store(object):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
 
 class Folder(object):
-    def __init__(self, store, entryid):
+    def __init__(self, store, entryid, associated=False):
         self.store = store
         self.server = store.server
         self._entryid = entryid # XXX make readable!
         self.mapifolder = store.mapistore.OpenEntry(entryid, IID_IMAPIFolder, MAPI_MODIFY)
+        self.content_flag = MAPI_ASSOCIATED if associated else 0
 
     @property
     def entryid(self):
@@ -540,7 +544,8 @@ class Folder(object):
         return HrGetOneProp(self.mapifolder, PR_DISPLAY_NAME_W).Value
 
     def items(self):
-        table = self.mapifolder.GetContentsTable(0)
+        table = self.mapifolder.GetContentsTable(self.content_flag)
+        table.SortTable(SSortOrderSet([SSort(PR_MESSAGE_DELIVERY_TIME, TABLE_SORT_DESCEND)], 0, 0), 0) # XXX configure
         while True:
             rows = table.QueryRows(50, 0)
             if len(rows) == 0:
@@ -552,16 +557,13 @@ class Folder(object):
                 item.mapiitem = _openentry_raw(self.store.mapistore, PpropFindProp(row, PR_ENTRYID).Value, MAPI_MODIFY)
                 yield item
 
-    def create_item(self, eml=None):
+    def create_item(self, eml=None): # XXX associated
         return Item(self, eml=eml)
 
-    def __iter__(self):
-        return self.items()
-
     @property
-    def size(self):
+    def size(self): # XXX bit slow perhaps? :P
         size = 0
-        table = self.mapifolder.GetContentsTable(0)
+        table = self.mapifolder.GetContentsTable(self.content_flag)
         table.SetColumns([PR_MESSAGE_SIZE], 0)
         table.SeekRow(BOOKMARK_BEGINNING, 0)
         rows = table.QueryRows(-1, 0)
@@ -571,9 +573,9 @@ class Folder(object):
 
     @property
     def count(self):
-        return self.mapifolder.GetContentsTable(0).GetRowCount(0)
+        return self.mapifolder.GetContentsTable(self.content_flag).GetRowCount(0) # XXX PR_CONTENT_COUNT, PR_ASSOCIATED_CONTENT_COUNT
 
-    def delete(self, items):
+    def delete(self, items): # XXX associated
         try:
             items = list(items)
         except TypeError:
@@ -609,6 +611,14 @@ class Folder(object):
     def props(self):
         return _props(self.mapifolder)
 
+    def table(self, name, restriction=None, order=None, columns=None): # XXX associated, PR_CONTAINER_CONTENTS?
+        return Table(self.server, self.mapifolder.OpenProperty(name, IID_IMAPITable, 0, 0), name, restriction=restriction, order=order, columns=columns)
+
+    def tables(self): # XXX associated
+        yield self.table(PR_CONTAINER_CONTENTS)
+        yield self.table(PR_FOLDER_ASSOCIATED_CONTENTS)
+        yield self.table(PR_CONTAINER_HIERARCHY)
+
     def sync(self, importer, state=None, log=None, max_changes=None):
         if state is None:
             state = (8*'\0').encode('hex').upper()
@@ -637,7 +647,14 @@ class Folder(object):
         for message in mailbox.MH(location):
             newitem = Item(self,message.__str__())
 
-    def __unicode__(self):
+    @property
+    def associated(self):
+        return Folder(self.store, self._entryid, associated=True)
+
+    def __iter__(self):
+        return self.items()
+
+    def __unicode__(self): # XXX associated?
         return u'Folder(%s)' % self.name
 
     def __repr__(self):
