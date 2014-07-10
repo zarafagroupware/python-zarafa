@@ -35,6 +35,7 @@ import time
 
 from MAPI.Util import *
 from MAPI.Util.Generators import *
+import MAPI.Util.AddressBook
 import MAPI.Tags
 import _MAPICore
 import inetmapi
@@ -313,8 +314,8 @@ class Server(object):
                     yield User(self, username)
                 return
         try:
-            for comp in self.sa.GetCompanyList(0):
-                for user in Company(self, comp.Companyname).users():
+            for name in self._companylist():
+                for user in Company(self, name).users():
                     yield user
         except MAPIErrorNoSupport:
             for ecuser in self.sa.GetUserList(None, 0):
@@ -322,23 +323,31 @@ class Server(object):
                     if remote or ecuser.Servername in (self.name, ''):
                         yield User(self, ecuser.Username)
 
-    def create_user(self, name, password=None, company=None):
-        usereid = self.sa.CreateUser(ECUSER('%s@%s' % (name, company), password, 'email@domain.com', 'Full Name'), 0)
-        return self.company(company).user('%s@%s' % (name, company))
+    def create_user(self, name, password=None, company=None): # XXX unicode name?
+        if company and company != u'Default':
+            usereid = self.sa.CreateUser(ECUSER('%s@%s' % (name, company), password, 'email@domain.com', 'Full Name'), 0)
+            return self.company(company).user('%s@%s' % (name, company))
+        else:
+            usereid = self.sa.CreateUser(ECUSER('%s' % name, password, 'email@domain.com', 'Full Name'), 0)
+            return self.user(name)
 
     def company(self, name):
         return Company(self, name)
 
+    def _companylist(self): # XXX fix self.sa.GetCompanyList(MAPI_UNICODE)? looks like it's not swigged correctly?
+        self.sa.GetCompanyList(0) # XXX exception for single-tenant....
+        return MAPI.Util.AddressBook.GetCompanyList(self.mapisession, MAPI_UNICODE)
+
     def companies(self, remote=True):
         try:
-            for comp in self.sa.GetCompanyList(0):
-                yield Company(self, comp.Companyname)
+            for name in self._companylist():
+                yield Company(self, name)
         except MAPIErrorNoSupport:
             yield Company(self, u'Default')
 
     def create_company(self, name):
-        company = ECCOMPANY(name, None)
-        companyeid = self.sa.CreateCompany(company, 0)
+        name = unicode(name)
+        companyeid = self.sa.CreateCompany(ECCOMPANY(name, None), MAPI_UNICODE)
         return self.company(name)
 
     def store(self, guid): # XXX not unique across servers?
@@ -387,11 +396,11 @@ class Server(object):
 
 class Company(object):
     def __init__(self, server, name):
+        self.name = name = unicode(name)
         self.server = server
-        self.name = name
         if name != u'Default': # XXX
             try:
-                self._eccompany = self.server.sa.GetCompany(self.server.sa.ResolveCompanyName(str(self.name), 0), 0) # XXX unicode?
+                self._eccompany = self.server.sa.GetCompany(self.server.sa.ResolveCompanyName(self.name, MAPI_UNICODE), MAPI_UNICODE) # XXX unicode?
             except MAPIErrorNotFound:
                 raise ZarafaException("no such company: '%s'" % name)
 
@@ -457,6 +466,7 @@ class Store(object):
         root = self.mapistore.OpenEntry(None, None, 0)
         return Folder(self, HrGetOneProp(root, PR_IPM_CONTACT_ENTRYID).Value)
 
+    @property
     def user(self):
         try:
             userid = HrGetOneProp(self.mapistore, PR_MAILBOX_OWNER_ENTRYID).Value
