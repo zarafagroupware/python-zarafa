@@ -315,20 +315,26 @@ class Server(object):
                 return
         try:
             for name in self._companylist():
-                for user in Company(self, name).users():
+                for user in Company(self, name).users(): # XXX remote/system check
                     yield user
         except MAPIErrorNoSupport:
-            for ecuser in self.sa.GetUserList(None, 0):
-                if system or ecuser.Username != 'SYSTEM':
-                    if remote or ecuser.Servername in (self.name, ''):
-                        yield User(self, ecuser.Username)
+            for username in AddressBook.GetUserList(self.mapisession, None, MAPI_UNICODE): # XXX sa.GetUserList broken for unicode?
+                user = User(self, username)
+                if system or username != u'SYSTEM':
+                    if remote or user._ecuser.Servername in (self.name, ''):
+                        yield user
 
-    def create_user(self, name, password=None, company=None): # XXX unicode name?
+    def create_user(self, name, password=None, company=None): # XXX unicode 
+        name = unicode(name)
+        if password:
+            password = unicode(password)
+        if company:
+            company = unicode(company)
         if company and company != u'Default':
-            usereid = self.sa.CreateUser(ECUSER('%s@%s' % (name, company), password, 'email@domain.com', 'Full Name'), 0)
-            return self.company(company).user('%s@%s' % (name, company))
+            usereid = self.sa.CreateUser(ECUSER(u'%s@%s' % (name, company), password, u'email@domain.com', u'Full Name'), MAPI_UNICODE)
+            return self.company(company).user(u'%s@%s' % (name, company))
         else:
-            usereid = self.sa.CreateUser(ECUSER('%s' % name, password, 'email@domain.com', 'Full Name'), 0)
+            usereid = self.sa.CreateUser(ECUSER(name, password, u'email@domain.com', u'Full Name'), MAPI_UNICODE)
             return self.user(name)
 
     def company(self, name):
@@ -400,7 +406,7 @@ class Company(object):
         self.server = server
         if name != u'Default': # XXX
             try:
-                self._eccompany = self.server.sa.GetCompany(self.server.sa.ResolveCompanyName(self.name, MAPI_UNICODE), MAPI_UNICODE) # XXX unicode?
+                self._eccompany = self.server.sa.GetCompany(self.server.sa.ResolveCompanyName(self.name, MAPI_UNICODE), MAPI_UNICODE)
             except MAPIErrorNotFound:
                 raise ZarafaException("no such company: '%s'" % name)
 
@@ -490,11 +496,14 @@ class Store(object):
         if system:
             root = self.mapistore.OpenEntry(None, None, 0)
         else:
-            if self.public:
-                ipmsubtreeid = self.mapistore.GetProps([PR_IPM_PUBLIC_FOLDERS_ENTRYID], 0)[0]
-            else:
-                ipmsubtreeid = self.mapistore.GetProps([PR_IPM_SUBTREE_ENTRYID], 0)[0]
-            root = self.mapistore.OpenEntry(ipmsubtreeid.Value, IID_IMAPIFolder, MAPI_DEFERRED_ERRORS)
+            try:
+                if self.public:
+                    ipmsubtreeid = HrGetOneProp(self.mapistore, PR_IPM_PUBLIC_FOLDERS_ENTRYID).Value
+                else:
+                    ipmsubtreeid = HrGetOneProp(self.mapistore, PR_IPM_SUBTREE_ENTRYID).Value
+            except MAPIErrorNotFound: # SYSTEM store
+                return
+            root = self.mapistore.OpenEntry(ipmsubtreeid, IID_IMAPIFolder, MAPI_DEFERRED_ERRORS)
         table = root.GetHierarchyTable(0)
         table.SetColumns([PR_ENTRYID], TBL_BATCH)
         table.Restrict(SPropertyRestriction(RELOP_EQ, PR_FOLDER_TYPE, SPropValue(PR_FOLDER_TYPE, FOLDER_GENERIC)), TBL_BATCH)
@@ -888,10 +897,10 @@ class Attachment(object):
 
 class User(object):
     def __init__(self, server, name):
+        self.name = name = unicode(name)
         self.server = server
-        self.name = name
         try:
-            self._ecuser = self.server.sa.GetUser(self.server.sa.ResolveUserName(str(self.name), 0), 0) # XXX unicode?
+            self._ecuser = self.server.sa.GetUser(self.server.sa.ResolveUserName(self.name, MAPI_UNICODE), MAPI_UNICODE)
         except MAPIErrorNotFound:
             raise ZarafaException("no such user: '%s'" % name)
         self.mapiuser = self.server.mapisession.OpenEntry(self._ecuser.UserID, None, 0)
@@ -920,7 +929,7 @@ class User(object):
     @property
     def store(self):
         try:
-            storeid = self.server.ems.CreateStoreEntryID(None, str(self.name), 0)
+            storeid = self.server.ems.CreateStoreEntryID(None, self.name, MAPI_UNICODE)
             mapistore = self.server.mapisession.OpenMsgStore(0, storeid, IID_IMsgStore, MDB_WRITE|MAPI_DEFERRED_ERRORS)
             return Store(self.server, mapistore)
         except MAPIErrorNotFound:
