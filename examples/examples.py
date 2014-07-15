@@ -1,7 +1,7 @@
 import zarafa
 s = zarafa.Server()
 
-for prop in s.admin_store.properties():
+for prop in s.admin_store.props():
     print prop.name, prop.proptag, prop.value
 
 for company in s.companies():
@@ -20,12 +20,12 @@ print 'server state:', s.state
 
 for user in s.users():
     if user.name == 'user1':
-        print user.store.properties()
+        print user.store.props()
         for folder in user.store.folders():
             if folder.name == 'Sent Items':
                 sync_folder = folder
                 for item in folder.items():
-                    print 'item:', item.subject, item.properties(), [(att.filename, att.mimetag, len(att.data)) for att in item.attachments()]
+                    print 'item:', item.subject, item.props(), [(att.filename, att.mimetag, len(att.data)) for att in item.attachments()]
 
 print 'syncing'
 class Importer:
