@@ -8,6 +8,9 @@ python-zarafa depends on the following modules:
 * [python-mapi](http://download.zarafa.com/community/final/7.1/7.1.9-44333/) (Provided by ZCP)
 * [python-daemon](https://pypi.python.org/pypi/python-daemon/)
 
+Please keep in mind that this API is written to work on the latest version of Zarafa.  
+In result certain features may not work on older versions.
+
 # Installation
 To install python-zarafa just simply run the following command.
 
