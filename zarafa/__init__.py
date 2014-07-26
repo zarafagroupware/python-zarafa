@@ -79,8 +79,19 @@ def _props(mapiobj, namespace=None):
     for prop in props:
         result.append((prop.ulPropTag, prop.Value, PROP_TYPE(prop.ulPropTag)))
     result.sort()
-    props1 =[Property(mapiobj,b,c,d) for (b,c,d) in result]
-    return [p for p in props1 if not namespace or p.namespace==namespace]
+    props1 =[Property(mapiobj, b, c, d) for (b, c, d) in result]
+    return [p for p in props1 if not namespace or p.namespace == namespace]
+
+def _state(mapiobj):
+    exporter = mapiobj.OpenProperty(PR_CONTENTS_SYNCHRONIZER, IID_IExchangeExportChanges, 0, 0)
+    exporter.Config(None, SYNC_NORMAL | SYNC_CATCHUP, None, None, None, None, 0)
+    steps, step = None, 0
+    while steps != step:
+        steps, step = exporter.Synchronize(step)
+    stream = IStream()
+    exporter.UpdateState(stream)
+    stream.Seek(0, MAPI.STREAM_SEEK_SET)
+    return bin2hex(stream.Read(0xFFFFF))
 
 def _sync(server, syncobj, importer, state, log, max_changes):
     importer = TrackingContentsImporter(server, importer, log)
@@ -92,20 +103,24 @@ def _sync(server, syncobj, importer, state, log, max_changes):
     step = retry = changes = 0
     while True:
         try:
-            (steps, step) = exporter.Synchronize(step)
+            try:
+                (steps, step) = exporter.Synchronize(step)
+            finally:
+                importer.skip = False
             changes += 1
             retry = 0
             if (steps == step) or (max_changes and changes >= max_changes):
-                break;
+                break
         except MAPIError, e:
+            if log:
+                log.warn("Received a MAPI error or timeout (error=0x%x, retry=%d/5)" % (e.hr, retry))
             if retry < 5:
-                if log:
-                    log.warn("Received a MAPI error or timeout (error=0x%x, retry=%d/5)" % (e.hr, retry))
+                retry += 1
             else:
                 if log:
-                    log.error("Too many retries, abandon ship")
-                raise
-            retry += 1
+                    log.error("Too many retries, skipping change")
+                importer.skip = True # in case of a timeout or other issue, try to skip the change after trying several times
+                retry = 0
     exporter.UpdateState(stream)
     stream.Seek(0, MAPI.STREAM_SEEK_SET)
     state = bin2hex(stream.Read(0xFFFFF))
@@ -120,7 +135,7 @@ def _openentry_raw(mapistore, entryid, flags):
 class ZarafaException(Exception):
     pass
 
-class ZarafaConfigException(Exception):
+class ZarafaConfigException(ZarafaException):
     pass
 
 class Property(object):
@@ -201,6 +216,14 @@ class Table(object):
         except MAPIErrorNotFound:
             pass
 
+    # TODO: refactor function
+    def dict_rows(self):
+        try:
+            for row in self.mapitable.QueryRows(-1, 0):
+                yield dict([(c.ulPropTag, c.Value) for c in row])
+        except MAPIErrorNotFound:
+            pass
+
     def data(self, header=False):
         data = [[p.strval() for p in row] for row in self.rows()]
         if header:
@@ -258,7 +281,7 @@ class Server(object):
         self.sslkey_pass = getattr(self.options, 'sslkey_pass', None) or self.sslkey_pass
         while True:
             try:
-                self.mapisession = OpenECSession('SYSTEM','', self.server_socket, sslkey_file=self.sslkey_file, sslkey_pass=self.sslkey_pass)
+                self.mapisession = OpenECSession('SYSTEM', '', self.server_socket, sslkey_file=self.sslkey_file, sslkey_pass=self.sslkey_pass)
                 break
             except MAPIErrorNetworkError:
                 if service:
@@ -294,7 +317,7 @@ class Server(object):
     def _archive_session(self, host):
         if host not in self._archive_sessions:
             try:
-                self._archive_sessions[host] = OpenECSession('SYSTEM','', 'https://%s:237/zarafa' % host, sslkey_file=self.sslkey_file, sslkey_pass=self.sslkey_pass)
+                self._archive_sessions[host] = OpenECSession('SYSTEM', '', 'https://%s:237/zarafa' % host, sslkey_file=self.sslkey_file, sslkey_pass=self.sslkey_pass)
             except: # MAPIErrorLogonFailed, MAPIErrorNetworkError:
                 self._archive_sessions[host] = None # XXX avoid subsequent timeouts for now
                 raise ZarafaException("could not connect to server at '%s'" % host)
@@ -306,6 +329,12 @@ class Server(object):
 
     def user(self, name):
         return User(self, name)
+
+    def get_user(self, name):
+        try:
+            return self.user(name)
+        except ZarafaException:
+            pass
 
     def users(self, remote=True, system=False, parse=False):
         if parse:
@@ -324,21 +353,32 @@ class Server(object):
                     if remote or user._ecuser.Servername in (self.name, ''):
                         yield user
 
-    def create_user(self, name, password=None, company=None): # XXX unicode 
+    def create_user(self, name, password=None, company=None, fullname=None): # XXX unicode 
         name = unicode(name)
+        fullname = unicode(fullname or '')
         if password:
             password = unicode(password)
         if company:
             company = unicode(company)
         if company and company != u'Default':
-            usereid = self.sa.CreateUser(ECUSER(u'%s@%s' % (name, company), password, u'email@domain.com', u'Full Name'), MAPI_UNICODE)
+            usereid = self.sa.CreateUser(ECUSER(u'%s@%s' % (name, company), password, u'email@domain.com', fullname), MAPI_UNICODE)
             return self.company(company).user(u'%s@%s' % (name, company))
         else:
-            usereid = self.sa.CreateUser(ECUSER(name, password, u'email@domain.com', u'Full Name'), MAPI_UNICODE)
+            usereid = self.sa.CreateUser(ECUSER(name, password, u'email@domain.com', fullname), MAPI_UNICODE)
             return self.user(name)
+
+    def remove_user(self, name):
+        user = self.user(name)
+        self.sa.DeleteUser(user._ecuser.UserID)
 
     def company(self, name):
         return Company(self, name)
+
+    def get_company(self, name):
+        try:
+            return self.company(name)
+        except ZarafaException:
+            pass
 
     def _companylist(self): # XXX fix self.sa.GetCompanyList(MAPI_UNICODE)? looks like it's not swigged correctly?
         self.sa.GetCompanyList(0) # XXX exception for single-tenant....
@@ -357,11 +397,24 @@ class Server(object):
         return self.company(name)
 
     def store(self, guid): # XXX not unique across servers?
+        if len(guid) != 32:
+            raise ZarafaException("invalid store id: '%s'" % guid)
+        try:
+            storeid = guid.decode('hex')
+        except:
+            raise ZarafaException("invalid store id: '%s'" % guid)
         table = self.ems.GetMailboxTable(None, 0) # XXX merge with Store.__init__
         table.SetColumns([PR_ENTRYID, PR_EC_STORETYPE], 0)
-        table.Restrict(SPropertyRestriction(RELOP_EQ, PR_STORE_RECORD_KEY, SPropValue(PR_STORE_RECORD_KEY, guid.decode('hex'))), TBL_BATCH)
+        table.Restrict(SPropertyRestriction(RELOP_EQ, PR_STORE_RECORD_KEY, SPropValue(PR_STORE_RECORD_KEY, storeid)), TBL_BATCH)
         for row in table.QueryRows(-1, 0):
              return Store(self, self.mapisession.OpenMsgStore(0, row[0].Value, None, MDB_WRITE), row[1].Value == ECSTORE_TYPE_PUBLIC)
+        raise ZarafaException("no such store: '%s'" % guid)
+
+    def get_store(self, guid):
+        try:
+            return self.store(guid)
+        except ZarafaException:
+            pass
 
     def stores(self, system=False):
         table = self.ems.GetMailboxTable(None, 0)
@@ -380,15 +433,7 @@ class Server(object):
 
     @property
     def state(self):
-        exporter = self.mapistore.OpenProperty(PR_CONTENTS_SYNCHRONIZER, IID_IExchangeExportChanges, 0, 0)
-        exporter.Config(None, SYNC_NORMAL | SYNC_CATCHUP, None, None, None, None, 0)
-        steps, step = None, 0
-        while steps != step:
-            steps, step = exporter.Synchronize(step)
-        stream = IStream()
-        exporter.UpdateState(stream)
-        stream.Seek(0, MAPI.STREAM_SEEK_SET)
-        return bin2hex(stream.Read(0xFFFFF))
+        return _state(self.mapistore)
 
     def sync(self, importer, state, log=None, max_changes=None):
         importer.store = None
@@ -451,31 +496,31 @@ class Company(object):
 class Store(object):
     def __init__(self, server, mapistore, public=False):
         self.server = server
-        self.mapistore = mapistore
+        self.mapiobj = mapistore
         self.public = public
 
     @property
     def guid(self):
-        return bin2hex(HrGetOneProp(self.mapistore, PR_STORE_RECORD_KEY).Value)
+        return bin2hex(HrGetOneProp(self.mapiobj, PR_STORE_RECORD_KEY).Value)
 
     @property
     def inbox(self):
-        return Folder(self, self.mapistore.GetReceiveFolder('IPM', 0)[0])
+        return Folder(self, self.mapiobj.GetReceiveFolder('IPM', 0)[0])
 
     @property
     def calendar(self):
-        root = self.mapistore.OpenEntry(None, None, 0)
+        root = self.mapiobj.OpenEntry(None, None, 0)
         return Folder(self, HrGetOneProp(root, PR_IPM_APPOINTMENT_ENTRYID).Value)
 
     @property
     def contacts(self):
-        root = self.mapistore.OpenEntry(None, None, 0)
+        root = self.mapiobj.OpenEntry(None, None, 0)
         return Folder(self, HrGetOneProp(root, PR_IPM_CONTACT_ENTRYID).Value)
 
     @property
     def user(self):
         try:
-            userid = HrGetOneProp(self.mapistore, PR_MAILBOX_OWNER_ENTRYID).Value
+            userid = HrGetOneProp(self.mapiobj, PR_MAILBOX_OWNER_ENTRYID).Value
             return User(self.server, self.server.sa.GetUser(userid, 0).Username)
         except MAPIErrorNotFound:
             pass
@@ -494,16 +539,16 @@ class Store(object):
         if parse:
             filter_names = self.server.options.folders
         if system:
-            root = self.mapistore.OpenEntry(None, None, 0)
+            root = self.mapiobj.OpenEntry(None, None, 0)
         else:
             try:
                 if self.public:
-                    ipmsubtreeid = HrGetOneProp(self.mapistore, PR_IPM_PUBLIC_FOLDERS_ENTRYID).Value
+                    ipmsubtreeid = HrGetOneProp(self.mapiobj, PR_IPM_PUBLIC_FOLDERS_ENTRYID).Value
                 else:
-                    ipmsubtreeid = HrGetOneProp(self.mapistore, PR_IPM_SUBTREE_ENTRYID).Value
+                    ipmsubtreeid = HrGetOneProp(self.mapiobj, PR_IPM_SUBTREE_ENTRYID).Value
             except MAPIErrorNotFound: # SYSTEM store
                 return
-            root = self.mapistore.OpenEntry(ipmsubtreeid, IID_IMAPIFolder, MAPI_DEFERRED_ERRORS)
+            root = self.mapiobj.OpenEntry(ipmsubtreeid, IID_IMAPIFolder, MAPI_DEFERRED_ERRORS)
         table = root.GetHierarchyTable(0)
         table.SetColumns([PR_ENTRYID], TBL_BATCH)
         table.Restrict(SPropertyRestriction(RELOP_EQ, PR_FOLDER_TYPE, SPropValue(PR_FOLDER_TYPE, FOLDER_GENERIC)), TBL_BATCH)
@@ -523,18 +568,18 @@ class Store(object):
 
     @property
     def size(self):
-        return HrGetOneProp(self.mapistore, PR_MESSAGE_SIZE_EXTENDED).Value
+        return HrGetOneProp(self.mapiobj, PR_MESSAGE_SIZE_EXTENDED).Value
 
     def config_item(self, name):
         item = Item()
-        item.mapiitem = libcommon.GetConfigMessage(self.mapistore, 'Zarafa.Quota')
+        item.mapiobj = libcommon.GetConfigMessage(self.mapiobj, 'Zarafa.Quota')
         return item
 
     def prop(self, proptag):
-        return _prop(self, self.mapistore, proptag)
+        return _prop(self, self.mapiobj, proptag)
 
     def props(self):
-        return _props(self.mapistore)
+        return _props(self.mapiobj)
 
     def __unicode__(self):
         return u'Store(%s)' % self.guid
@@ -547,7 +592,7 @@ class Folder(object):
         self.store = store
         self.server = store.server
         self._entryid = entryid # XXX make readable!
-        self.mapifolder = store.mapistore.OpenEntry(entryid, IID_IMAPIFolder, MAPI_MODIFY)
+        self.mapiobj = store.mapiobj.OpenEntry(entryid, IID_IMAPIFolder, MAPI_MODIFY)
         self.content_flag = MAPI_ASSOCIATED if associated else 0
 
     @property
@@ -556,14 +601,14 @@ class Folder(object):
 
     @property
     def folderid(self):
-        return HrGetOneProp(self.mapifolder, PR_EC_HIERARCHYID).Value
+        return HrGetOneProp(self.mapiobj, PR_EC_HIERARCHYID).Value
 
     @property
     def name(self):
-        return HrGetOneProp(self.mapifolder, PR_DISPLAY_NAME_W).Value
+        return HrGetOneProp(self.mapiobj, PR_DISPLAY_NAME_W).Value
 
     def items(self):
-        table = self.mapifolder.GetContentsTable(self.content_flag)
+        table = self.mapiobj.GetContentsTable(self.content_flag)
         table.SortTable(SSortOrderSet([SSort(PR_MESSAGE_DELIVERY_TIME, TABLE_SORT_DESCEND)], 0, 0), 0) # XXX configure
         while True:
             rows = table.QueryRows(50, 0)
@@ -573,7 +618,7 @@ class Folder(object):
                 item = Item()
                 item.store = self.store
                 item.server = self.server
-                item.mapiitem = _openentry_raw(self.store.mapistore, PpropFindProp(row, PR_ENTRYID).Value, MAPI_MODIFY)
+                item.mapiobj = _openentry_raw(self.store.mapiobj, PpropFindProp(row, PR_ENTRYID).Value, MAPI_MODIFY)
                 yield item
 
     def create_item(self, eml=None): # XXX associated
@@ -582,7 +627,7 @@ class Folder(object):
     @property
     def size(self): # XXX bit slow perhaps? :P
         size = 0
-        table = self.mapifolder.GetContentsTable(self.content_flag)
+        table = self.mapiobj.GetContentsTable(self.content_flag)
         table.SetColumns([PR_MESSAGE_SIZE], 0)
         table.SeekRow(BOOKMARK_BEGINNING, 0)
         rows = table.QueryRows(-1, 0)
@@ -592,7 +637,7 @@ class Folder(object):
 
     @property
     def count(self):
-        return self.mapifolder.GetContentsTable(self.content_flag).GetRowCount(0) # XXX PR_CONTENT_COUNT, PR_ASSOCIATED_CONTENT_COUNT
+        return self.mapiobj.GetContentsTable(self.content_flag).GetRowCount(0) # XXX PR_CONTENT_COUNT, PR_ASSOCIATED_CONTENT_COUNT
 
     def delete(self, items): # XXX associated
         try:
@@ -602,17 +647,17 @@ class Folder(object):
         item_entryids = [item.entryid for item in items if isinstance(item, Item)]
         folder_entryids = [item.entryid for item in items if isinstance(item, Folder)]
         if item_entryids:
-            self.mapifolder.DeleteMessages(item_entryids, 0, None, DELETE_HARD_DELETE)
+            self.mapiobj.DeleteMessages(item_entryids, 0, None, DELETE_HARD_DELETE)
         for entryid in folder_entryids:
-            self.mapifolder.DeleteFolder(entryid, 0, None, DEL_FOLDERS|DEL_MESSAGES)
+            self.mapiobj.DeleteFolder(entryid, 0, None, DEL_FOLDERS|DEL_MESSAGES)
 
     def folders(self, recurse=True, depth=0):
-        if self.mapifolder.GetProps([PR_SUBFOLDERS], MAPI_UNICODE)[0].Value:
-            table = self.mapifolder.GetHierarchyTable(MAPI_UNICODE)
+        if self.mapiobj.GetProps([PR_SUBFOLDERS], MAPI_UNICODE)[0].Value:
+            table = self.mapiobj.GetHierarchyTable(MAPI_UNICODE)
             table.SetColumns([PR_ENTRYID, PR_FOLDER_TYPE, PR_DISPLAY_NAME_W], 0)
             rows = table.QueryRows(-1, 0)
             for row in rows:
-                subfolder = self.mapifolder.OpenEntry(row[0].Value, None, MAPI_MODIFY)
+                subfolder = self.mapiobj.OpenEntry(row[0].Value, None, MAPI_MODIFY)
                 entryid = subfolder.GetProps([PR_ENTRYID], MAPI_UNICODE)[0].Value
                 folder = Folder(self.store, entryid)
                 folder.depth = depth
@@ -622,31 +667,35 @@ class Folder(object):
                         yield subfolder
 
     def create_folder(self, name):
-        return self.mapifolder.CreateFolder(FOLDER_GENERIC, name, '', None, 0)
+        return self.mapiobj.CreateFolder(FOLDER_GENERIC, name, '', None, 0)
 
     def prop(self, proptag):
-        return _prop(self, self.mapifolder, proptag)
+        return _prop(self, self.mapiobj, proptag)
 
     def props(self):
-        return _props(self.mapifolder)
+        return _props(self.mapiobj)
 
     def table(self, name, restriction=None, order=None, columns=None): # XXX associated, PR_CONTAINER_CONTENTS?
-        return Table(self.server, self.mapifolder.OpenProperty(name, IID_IMAPITable, 0, 0), name, restriction=restriction, order=order, columns=columns)
+        return Table(self.server, self.mapiobj.OpenProperty(name, IID_IMAPITable, 0, 0), name, restriction=restriction, order=order, columns=columns)
 
     def tables(self): # XXX associated
         yield self.table(PR_CONTAINER_CONTENTS)
         yield self.table(PR_FOLDER_ASSOCIATED_CONTENTS)
         yield self.table(PR_CONTAINER_HIERARCHY)
 
+    @property
+    def state(self):
+        return _state(self.mapiobj)
+
     def sync(self, importer, state=None, log=None, max_changes=None):
         if state is None:
             state = (8*'\0').encode('hex').upper()
         importer.store = self.store
-        return _sync(self.store.server, self.mapifolder, importer, state, log or self.log, max_changes)
+        return _sync(self.store.server, self.mapiobj, importer, state, log, max_changes)
 
     def readmbox(self, location):
         for message in mailbox.mbox(location):
-            newitem = Item(self,message.__str__())
+            newitem = Item(self, message.__str__())
 
     def mbox(self, location):
         mboxfile = mailbox.mbox(location)
@@ -664,7 +713,7 @@ class Folder(object):
 
     def read_maildir(self, location):
         for message in mailbox.MH(location):
-            newitem = Item(self,message.__str__())
+            newitem = Item(self, message.__str__())
 
     @property
     def associated(self):
@@ -689,10 +738,10 @@ class Item(object):
         # if eml is given, set Item
         if eml is not None and self.folder is not None:
             # options for CreateMessage: 0 / MAPI_ASSOCIATED
-            self.mapiitem = self.folder.mapifolder.CreateMessage(None, 0)
+            self.mapiobj = self.folder.mapiobj.CreateMessage(None, 0)
             dopt = inetmapi.delivery_options()
-            inetmapi.IMToMAPI(self.folder.store.server.mapisession, self.folder.store.mapistore, None, self.mapiitem, self.emlfile, dopt)
-            self.mapiitem.SaveChanges(0)
+            inetmapi.IMToMAPI(self.folder.store.server.mapisession, self.folder.store.mapiobj, None, self.mapiobj, self.emlfile, dopt)
+            self.mapiobj.SaveChanges(0)
 
         self._architem = None
 
@@ -700,39 +749,39 @@ class Item(object):
     def _arch_item(self): # make an explicit connection to archive server so we can handle otherwise silenced errors (MAPI errors in mail bodies for example)
         if self._architem is None:
             if self.stubbed:
-                ids = self.mapiitem.GetIDsFromNames(NAMED_PROPS_ARCHIVER, 0)
+                ids = self.mapiobj.GetIDsFromNames(NAMED_PROPS_ARCHIVER, 0)
                 PROP_STORE_ENTRYIDS = CHANGE_PROP_TYPE(ids[0], PT_MV_BINARY)
                 try:
-                    arch_storeid = HrGetOneProp(self.mapiitem, PROP_STORE_ENTRYIDS).Value[0] # XXX XXX multiple archives?!?!
+                    arch_storeid = HrGetOneProp(self.mapiobj, PROP_STORE_ENTRYIDS).Value[0] # XXX XXX multiple archives?!?!
                     arch_server = arch_storeid[arch_storeid.find('pseudo://')+9:-1]
                     arch_session = self.server._archive_session(arch_server)
                     if arch_session is None: # XXX first connection failed, no need to report about this multiple times
-                        self._architem = self.mapiitem
+                        self._architem = self.mapiobj
                     else:
                         PROP_ITEM_ENTRYIDS = CHANGE_PROP_TYPE(ids[1], PT_MV_BINARY)
-                        item_entryid = HrGetOneProp(self.mapiitem, PROP_ITEM_ENTRYIDS).Value[0]
+                        item_entryid = HrGetOneProp(self.mapiobj, PROP_ITEM_ENTRYIDS).Value[0]
                         arch_store = arch_session.OpenMsgStore(0, arch_storeid, None, 0)
                         self._architem = arch_store.OpenEntry(item_entryid, None, 0)
                 except MAPIErrorNotFound: # XXX fix 'stubbed' definition!!
-                    self._architem = self.mapiitem
+                    self._architem = self.mapiobj
             else:
-                self._architem = self.mapiitem
+                self._architem = self.mapiobj
         return self._architem
 
     @property
     def entryid(self): # XXX make readable!
-        return HrGetOneProp(self.mapiitem, PR_ENTRYID).Value
+        return HrGetOneProp(self.mapiobj, PR_ENTRYID).Value
 
     @property
     def sourcekey(self):
         if not hasattr(self, '_sourcekey'): # XXX more general caching solution
-            self._sourcekey = bin2hex(HrGetOneProp(self.mapiitem, PR_SOURCE_KEY).Value)
+            self._sourcekey = bin2hex(HrGetOneProp(self.mapiobj, PR_SOURCE_KEY).Value)
         return self._sourcekey
 
     @property
     def subject(self):
         try:
-            return HrGetOneProp(self.mapiitem, PR_SUBJECT_W).Value
+            return HrGetOneProp(self.mapiobj, PR_SUBJECT_W).Value
         except MAPIErrorNotFound:
             pass
 
@@ -760,18 +809,18 @@ class Item(object):
 
     @property
     def stubbed(self):
-        ids = self.mapiitem.GetIDsFromNames(NAMED_PROPS_ARCHIVER, 0) # XXX cache folder.GetIDs..?
+        ids = self.mapiobj.GetIDsFromNames(NAMED_PROPS_ARCHIVER, 0) # XXX cache folder.GetIDs..?
         PROP_STUBBED = CHANGE_PROP_TYPE(ids[2], PT_BOOLEAN)
         try:
-            return HrGetOneProp(self.mapiitem, PROP_STUBBED).Value # False means destubbed
+            return HrGetOneProp(self.mapiobj, PROP_STUBBED).Value # False means destubbed
         except MAPIErrorNotFound:
             return False
 
     def prop(self, proptag):
-        return _prop(self, self.mapiitem, proptag)
+        return _prop(self, self.mapiobj, proptag)
 
     def props(self, namespace=None):
-        return _props(self.mapiitem, namespace)
+        return _props(self.mapiobj, namespace)
 
     def attachments(self, embedded=False):
         mapiitem = self._arch_item
@@ -804,7 +853,7 @@ class Item(object):
         if not self.emlfile:
             sopt = inetmapi.sending_options()
             sopt.no_recipients_workaround = True
-            self.emlfile = inetmapi.IMToINet(self.store.server.mapisession, None, self.mapiitem, sopt)
+            self.emlfile = inetmapi.IMToINet(self.store.server.mapisession, None, self.mapiobj, sopt)
         return self.emlfile
 
     @property
@@ -812,7 +861,7 @@ class Item(object):
         return Address(self.server, *(self.prop(p).value for p in (PR_SENT_REPRESENTING_ADDRTYPE, PR_SENT_REPRESENTING_NAME, PR_SENT_REPRESENTING_EMAIL_ADDRESS, PR_SENT_REPRESENTING_ENTRYID)))
 
     def table(self, name, restriction=None, order=None, columns=None):
-        return Table(self.server, self.mapiitem.OpenProperty(name, IID_IMAPITable, 0, 0), name, restriction=restriction, order=order, columns=columns)
+        return Table(self.server, self.mapiobj.OpenProperty(name, IID_IMAPITable, 0, 0), name, restriction=restriction, order=order, columns=columns)
 
     def tables(self):
         yield self.table(PR_MESSAGE_RECIPIENTS)
@@ -850,9 +899,16 @@ class Address:
         else:
             return self._email
 
+    def __unicode__(self):
+        return u'Address(%s)' % self.email
+
+    def __repr__(self):
+        return unicode(self).encode(sys.stdout.encoding or 'utf8')
+
 class Attachment(object):
     def __init__(self, att):
         self.att = att
+        self._data = None
 
     def prop(self, proptag):
         return _prop(self, self.att, proptag)
@@ -882,18 +938,30 @@ class Attachment(object):
 
     @property
     def data(self):
+        if self._data is not None:
+            return self._data
         try:
-            method = HrGetOneProp(self.att, PR_ATTACH_METHOD).Value
+            method = HrGetOneProp(self.att, PR_ATTACH_METHOD).Value # XXX unused
             stream = self.att.OpenProperty(PR_ATTACH_DATA_BIN, IID_IStream, 0, 0)
         except MAPIErrorNotFound:
-            return ''
+            self._data = ''
+            return self._data
         data = []
         while True:
             blup = stream.Read(0xFFFFF) # 1 MB
             if len(blup) == 0:
                 break
             data.append(blup)
-        return ''.join(data)
+        self._data = ''.join(data)
+        return self._data
+
+    # file-like behaviour
+    def read(self):
+        return self.data
+
+    @property
+    def name(self):
+        return self.filename
 
 class User(object):
     def __init__(self, server, name):
@@ -903,7 +971,7 @@ class User(object):
             self._ecuser = self.server.sa.GetUser(self.server.sa.ResolveUserName(self.name, MAPI_UNICODE), MAPI_UNICODE)
         except MAPIErrorNotFound:
             raise ZarafaException("no such user: '%s'" % name)
-        self.mapiuser = self.server.mapisession.OpenEntry(self._ecuser.UserID, None, 0)
+        self.mapiobj = self.server.mapisession.OpenEntry(self._ecuser.UserID, None, 0)
 
     @property
     def email(self):
@@ -919,12 +987,12 @@ class User(object):
 
     @property
     def company(self):
-        return Company(self.server, HrGetOneProp(self.mapiuser, PR_EC_COMPANY_NAME).Value or u'Default')
+        return Company(self.server, HrGetOneProp(self.mapiobj, PR_EC_COMPANY_NAME).Value or u'Default')
 
     @property # XXX
     def local(self):
         store = self.store
-        return bool(store and (self.server.guid == bin2hex(HrGetOneProp(store.mapistore, PR_MAPPING_SIGNATURE).Value)))
+        return bool(store and (self.server.guid == bin2hex(HrGetOneProp(store.mapiobj, PR_MAPPING_SIGNATURE).Value)))
 
     @property
     def store(self):
@@ -937,7 +1005,7 @@ class User(object):
 
     @property
     def archive_store(self):
-        mapistore = self.store.mapistore
+        mapistore = self.store.mapiobj
         ids = mapistore.GetIDsFromNames(NAMED_PROPS_ARCHIVER, 0) # XXX merge namedprops stuff
         PROP_STORE_ENTRYIDS = CHANGE_PROP_TYPE(ids[0], PT_MV_BINARY)
         try:
@@ -957,13 +1025,13 @@ class User(object):
 
     @property
     def archive_servers(self):
-       return HrGetOneProp(self.mapiuser, PR_EC_ARCHIVE_SERVERS).Value
+       return HrGetOneProp(self.mapiobj, PR_EC_ARCHIVE_SERVERS).Value
 
     def prop(self, proptag):
-        return _prop(self, self.mapiuser, proptag)
+        return _prop(self, self.mapiobj, proptag)
 
     def props(self):
-        return _props(self.mapiuser)
+        return _props(self.mapiobj)
 
     @property
     def quota(self):
@@ -999,15 +1067,18 @@ class TrackingContentsImporter(ECImportContentsChanges):
         self.server = server
         self.importer = importer
         self.log = log
+        self.skip = False
 
     def ImportMessageChangeAsAStream(self, props, flags):
         self.ImportMessageChange(props, flags)
 
     def ImportMessageChange(self, props, flags):
+        if self.skip:
+            raise MAPIError(SYNC_E_IGNORE)
         try:
             entryid = PpropFindProp(props, PR_ENTRYID)
             if self.importer.store:
-                mapistore = self.importer.store.mapistore
+                mapistore = self.importer.store.mapiobj
             else:
                 store_entryid = PpropFindProp(props, PR_STORE_ENTRYID).Value
                 store_entryid = WrapStoreEntryID(0, 'zarafa6client.dll', store_entryid[:-4])+self.server.pseudo_url+'\x00'
@@ -1015,14 +1086,14 @@ class TrackingContentsImporter(ECImportContentsChanges):
             item = Item()
             item.server = self.server
             try:
-                item.mapiitem = _openentry_raw(mapistore, entryid.Value, 0)
+                item.mapiobj = _openentry_raw(mapistore, entryid.Value, 0)
                 item.folderid = PpropFindProp(props, PR_EC_PARENT_HIERARCHYID).Value
-                props = item.mapiitem.GetProps([PR_EC_HIERARCHYID, PR_EC_PARENT_HIERARCHYID, PR_STORE_RECORD_KEY], 0) # XXX properties niet aanwezig?
+                props = item.mapiobj.GetProps([PR_EC_HIERARCHYID, PR_EC_PARENT_HIERARCHYID, PR_STORE_RECORD_KEY], 0) # XXX properties don't exists?
                 item.docid = props[0].Value
 #            item.folderid = props[1].Value # XXX 
                 item.storeid = bin2hex(props[2].Value)
                 self.importer.update(item, flags)
-            except MAPIErrorNotFound, MAPIErrorNoAccess: # XXX, mail already deleted, can we do this in a cleaner way?
+            except (MAPIErrorNotFound, MAPIErrorNoAccess): # XXX, mail already deleted, can we do this in a cleaner way?
                 if self.log:
                     self.log.debug('received change for entryid %s, but it could not be opened' % bin2hex(entryid.Value))
         except Exception, e:
@@ -1032,6 +1103,8 @@ class TrackingContentsImporter(ECImportContentsChanges):
         raise MAPIError(SYNC_E_IGNORE)
 
     def ImportMessageDeletion(self, flags, entries):
+        if self.skip:
+            return
         try:
             for entry in entries:
                 item = Item()
@@ -1091,15 +1164,33 @@ def daemonize(func, options=None, foreground=False, args=[], log=None, config=No
                 uid = pwd.getpwnam(config.get('run_as_user')).pw_uid
             if config.get('run_as_group'):
                 gid = grp.getgrnam(config.get('run_as_group')).gr_gid
-        if pidfile:
+        if pidfile: # following checks copied from zarafa-ws
             pidfile = daemon.pidlockfile.TimeoutPIDLockFile(pidfile, 10)
-#            pidfile.break_lock() # XXX add checks? see zarafa-ws
+            oldpid = pidfile.read_pid()
+            if oldpid is None:
+                # there was no pidfile, remove the lock if it's there
+                pidfile.break_lock()
+            elif oldpid:
+                try:
+                    cmdline = open('/proc/%u/cmdline' % oldpid).read().split('\0')
+                except IOError, error:
+                    if error.errno != errno.ENOENT:
+                        raise
+                    # errno.ENOENT indicates that no process with pid=oldpid exists, which is ok
+                    pidfile.break_lock()
+#                else: # XXX can we do this in general?
+#                    # A process exists with pid=oldpid, check if it's a zarafa-ws instance.
+#                    # sys.argv[0] contains the script name, which matches cmdline[1]. But once compiled
+#                    # sys.argv[0] is probably the executable name, which will match cmdline[0].
+#                    if not sys.argv[0] in cmdline[:2]:
+#                        # break the lock if it's another process
+#                        pidfile.break_lock()
         with daemon.DaemonContext(
-                pidfile=pidfile, 
+                pidfile=pidfile,
                 uid=uid, 
-                gid=gid, 
-                working_directory=working_directory, 
-                files_preserve=[h.stream for h in log.handlers if isinstance(h, logging.FileHandler)] if log else None, 
+                gid=gid,
+                working_directory=working_directory,
+                files_preserve=[h.stream for h in log.handlers if isinstance(h, logging.handlers.WatchedFileHandler)] if log else None, 
                 prevent_core=False,
             ):
             daemon_helper(func, service, log)
@@ -1119,7 +1210,7 @@ def logger(service, options=None, stdout=False, config=None, name=''):
     if name:
         log_file = log_file.replace(service, name) # XXX
     if log_method == 'file':
-        fh = logging.FileHandler(log_file)
+        fh = logging.handlers.WatchedFileHandler(log_file)
     elif log_method == 'syslog':
         fh = logging.handlers.SysLogHandler(address='/dev/log')
     log_level = {
@@ -1373,7 +1464,7 @@ class QueueListener(object):
         t.setDaemon(True)
         t.start()
 
-    def prepare(self , record):
+    def prepare(self, record):
         return record
 
     def handle(self, record):
