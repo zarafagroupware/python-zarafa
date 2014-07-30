@@ -188,10 +188,10 @@ class Property(object):
                 return v.encode('hex').upper()
             else:
                 return unicode(v).encode('utf-8')
-        return flatten(self.value)
+        return flatten(self._value)
 
     def __unicode__(self):
-        return u'Property(%s, %s)' % (self.name if self.named else self.idname, repr(self.value))
+        return u'Property(%s, %s)' % (self.name if self.named else self.idname, repr(self._value))
 
     # TODO: check if data is binary and convert it to hex
     def __repr__(self):
