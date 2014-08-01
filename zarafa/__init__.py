@@ -1,20 +1,14 @@
-#!/usr/bin/env python
-# python-zarafa: high-level Python bindings to Zarafa
-#
-# Copyright 2014 Zarafa and contributors, license AGPLv3 (see LICENSE file for details)
-#
-
 import contextlib
 import csv
 try:
     import daemon.pidlockfile
-except:
+except ImportError:
     pass
 import datetime
 import grp
 try:
-    import libcommon # XXX distribute with python-mapi?
-except:
+    import libcommon # XXX distribute with python-mapi? or rewrite functionality here?
+except ImportError:
     pass
 import logging.handlers
 from multiprocessing import Process, Queue
@@ -154,7 +148,7 @@ class Property(object):
         self.guid = None
         self.name = None
         self.namespace = None
-        if PROP_TYPE(self.proptag) == PT_SYSTIME: # XXX generalize
+        if proptype == PT_SYSTIME: # XXX generalize
             self._value = datetime.datetime.utcfromtimestamp(value.unixtime)
         else:
             self._value = value
@@ -172,6 +166,7 @@ class Property(object):
 
     def get_value(self):
         return self._value
+
     def set_value(self, value):
         self._value = value
         self.mapiobj.SetProps([SPropValue(self.proptag, value)])
@@ -566,6 +561,13 @@ class Store(object):
                         if not filter_names or folder.name in filter_names:
                             yield subfolder
 
+    def item(self, entryid):
+        item = Item() # XXX copy-pasting..
+        item.store = self
+        item.server = self.server
+        item.mapiobj = _openentry_raw(self.mapiobj, entryid.decode('hex'), MAPI_MODIFY)
+        return item
+
     @property
     def size(self):
         return HrGetOneProp(self.mapiobj, PR_MESSAGE_SIZE_EXTENDED).Value
@@ -591,7 +593,7 @@ class Folder(object):
     def __init__(self, store, entryid, associated=False):
         self.store = store
         self.server = store.server
-        self._entryid = entryid # XXX make readable!
+        self._entryid = entryid
         self.mapiobj = store.mapiobj.OpenEntry(entryid, IID_IMAPIFolder, MAPI_MODIFY)
         self.content_flag = MAPI_ASSOCIATED if associated else 0
 
@@ -621,6 +623,13 @@ class Folder(object):
                 item.mapiobj = _openentry_raw(self.store.mapiobj, PpropFindProp(row, PR_ENTRYID).Value, MAPI_MODIFY)
                 yield item
 
+    def item(self, entryid):
+        item = Item() # XXX copy-pasting..
+        item.store = self.store
+        item.server = self.server
+        item.mapiobj = _openentry_raw(self.store.mapiobj, entryid.decode('hex'), MAPI_MODIFY)
+        return item
+
     def create_item(self, eml=None): # XXX associated
         return Item(self, eml=eml)
 
@@ -644,8 +653,8 @@ class Folder(object):
             items = list(items)
         except TypeError:
             items = [items]
-        item_entryids = [item.entryid for item in items if isinstance(item, Item)]
-        folder_entryids = [item.entryid for item in items if isinstance(item, Folder)]
+        item_entryids = [item.entryid.decode('hex') for item in items if isinstance(item, Item)]
+        folder_entryids = [item.entryid.decode('hex') for item in items if isinstance(item, Folder)]
         if item_entryids:
             self.mapiobj.DeleteMessages(item_entryids, 0, None, DELETE_HARD_DELETE)
         for entryid in folder_entryids:
@@ -769,8 +778,8 @@ class Item(object):
         return self._architem
 
     @property
-    def entryid(self): # XXX make readable!
-        return HrGetOneProp(self.mapiobj, PR_ENTRYID).Value
+    def entryid(self):
+        return bin2hex(HrGetOneProp(self.mapiobj, PR_ENTRYID).Value)
 
     @property
     def sourcekey(self):
@@ -1085,12 +1094,13 @@ class TrackingContentsImporter(ECImportContentsChanges):
                 mapistore = self.server.mapisession.OpenMsgStore(0, store_entryid, None, 0)
             item = Item()
             item.server = self.server
+            item.store = Store(self.server, mapistore) # XXX public arg? improve item constructor to do more
             try:
                 item.mapiobj = _openentry_raw(mapistore, entryid.Value, 0)
                 item.folderid = PpropFindProp(props, PR_EC_PARENT_HIERARCHYID).Value
-                props = item.mapiobj.GetProps([PR_EC_HIERARCHYID, PR_EC_PARENT_HIERARCHYID, PR_STORE_RECORD_KEY], 0) # XXX properties don't exists?
+                props = item.mapiobj.GetProps([PR_EC_HIERARCHYID, PR_EC_PARENT_HIERARCHYID, PR_STORE_RECORD_KEY], 0) # XXX properties don't exist?
                 item.docid = props[0].Value
-#            item.folderid = props[1].Value # XXX 
+                # item.folderid = props[1].Value # XXX 
                 item.storeid = bin2hex(props[2].Value)
                 self.importer.update(item, flags)
             except (MAPIErrorNotFound, MAPIErrorNoAccess): # XXX, mail already deleted, can we do this in a cleaner way?
@@ -1100,6 +1110,8 @@ class TrackingContentsImporter(ECImportContentsChanges):
             if self.log:
                 self.log.error('could not process change for entryid %s (%r):' % (bin2hex(entryid.Value), props))
                 self.log.error(traceback.format_exc(e))
+            else:
+                traceback.print_exc(e)
         raise MAPIError(SYNC_E_IGNORE)
 
     def ImportMessageDeletion(self, flags, entries):
@@ -1115,6 +1127,8 @@ class TrackingContentsImporter(ECImportContentsChanges):
             if self.log:
                 self.log.error('could not process delete for entries: %s' % [bin2hex(entry) for entry in entries])
                 self.log.error(traceback.format_exc(e))
+            else:
+                traceback.print_exc(e)
 
     def ImportPerUserReadStateChange(self, states):
         pass
@@ -1136,11 +1150,11 @@ def daemon_helper(func, service, log):
         if isinstance(service, Service):
             service.ql.stop()
         if log and service:
-            log.info('stopping %s' % service.name)
+            log.info('stopping %s', service.name)
 
 def daemonize(func, options=None, foreground=False, args=[], log=None, config=None, service=None):
     if log and service:
-        log.info('starting %s' % service.name)
+        log.info('starting %s', service.name)
     if foreground or (options and options.foreground):
         try:
             if isinstance(service, Service): # XXX
@@ -1150,7 +1164,7 @@ def daemonize(func, options=None, foreground=False, args=[], log=None, config=No
             func(*args)
         finally:
             if log and service:
-                log.info('stopping %s' % service.name)
+                log.info('stopping %s', service.name)
     else:
         uid = gid = None
         working_directory = '/'
@@ -1589,7 +1603,7 @@ def server_socket(addr, ssl_key=None, ssl_cert=None, log=None): # XXX https, mer
         s.bind(addr2)
         s.listen(5)
     if log:
-        log.info('listening on socket %s' % addr)
+        log.info('listening on socket %s', addr)
     return s
 
 def client_socket(addr, ssl_cert=None, log=None):
