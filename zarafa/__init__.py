@@ -1,3 +1,9 @@
+#!/usr/bin/env python
+# python-zarafa: high-level Python bindings to Zarafa
+#
+# Copyright 2014 Zarafa and contributors, license AGPLv3 (see LICENSE file for details)
+#
+
 import contextlib
 import csv
 try:
