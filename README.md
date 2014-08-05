@@ -16,6 +16,13 @@ To install python-zarafa just simply run the following command.
 
     python setup.py install
 
+# Documentation
+To generate documentation just simply run the following command.
+
+   cd doc
+   make singlehtml
+   $BROWSER _build/singlehtml/index.html
+
 # Usage
 
 ```python
