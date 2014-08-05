@@ -1,8 +1,49 @@
 #!/usr/bin/env python
-# python-zarafa: high-level Python bindings to Zarafa
-#
-# Copyright 2014 Zarafa and contributors, license AGPLv3 (see LICENSE file for details)
-#
+
+""" 
+High-level python bindings for Zarafa
+
+Copyright 2014 Zarafa and contributors, license AGPLv3 (see LICENSE file for details)
+
+Some goals:
+
+- To be fully object-oriented, pythonic, layer above MAPI
+- To be usable for many common system administration tasks
+- To provide full access to the underlying MAPI layer if needed
+- To return all text as unicode strings
+- To return/accept binary identifiers in readable (hex-encoded) form
+- To raise well-described exceptions if something goes wrong
+
+Main classes:
+
+:class:`Server`
+
+:class:`Store`
+
+:class:`User`
+
+:class:`Company`
+
+:class:`Store`
+
+:class:`Folder`
+
+:class:`Item`
+
+:class:`Body`
+
+:class:`Attachment`
+
+:class:`Address`
+
+:class:`Quota`
+
+:class:`Config`
+
+:class:`Service`
+
+
+"""
 
 import contextlib
 import csv
@@ -126,10 +167,10 @@ def _sync(server, syncobj, importer, state, log, max_changes):
     state = bin2hex(stream.Read(0xFFFFF))
     return state
 
-def _openentry_raw(mapistore, entryid, flags):
+def _openentry_raw(mapistore, entryid, flags): # avoid underwater action for archived items
     try:
         return mapistore.OpenEntry(entryid, IID_IECMessageRaw, flags)
-    except MAPIErrorInterfaceNotSupported: # XXX can we do this simpler/faster?
+    except MAPIErrorInterfaceNotSupported:
         return mapistore.OpenEntry(entryid, None, flags)
 
 class ZarafaException(Exception):
@@ -139,7 +180,12 @@ class ZarafaConfigException(ZarafaException):
     pass
 
 class Property(object):
-    def __init__(self, mapiobj, proptag, value, proptype):
+    """ 
+Wrapper around MAPI properties 
+
+"""
+
+    def __init__(self, mapiobj, proptag, value, proptype): # XXX rethink attributes, names.. add guidname..?
         self.mapiobj = mapiobj
         self.proptag = proptag
 
@@ -154,6 +200,8 @@ class Property(object):
         self.guid = None
         self.name = None
         self.namespace = None
+
+        self.mapi_value = value # XXX mapiobj?
         if proptype == PT_SYSTIME: # XXX generalize
             self._value = datetime.datetime.utcfromtimestamp(value.unixtime)
         else:
@@ -199,6 +247,11 @@ class Property(object):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
 
 class Table(object):
+    """ 
+    Wrapper around MAPI tables
+
+"""
+
     def __init__(self, server, mapitable, proptag, restriction=None, order=None, columns=None):
         self.server = server
         self.mapitable = mapitable
@@ -255,31 +308,60 @@ class Table(object):
         return u'Table(%s)' % REV_TAG.get(self.proptag)
 
 class Server(object):
+    """ 
+Server class 
+
+By default, tries to connect to a Zarafa server as configured in ``/etc/zarafa/admin.cfg`` or at UNIX socket ``/var/run/zarafa``
+
+Looks at command-line to see if another server address or other related options were given (such as -c, -s, -k, -p)
+
+:param server_socket: similar to 'server_socket' option in config file
+:param sslkey_file: similar to 'sslkey_file' option in config file
+:param sslkey_pass: similar to 'sslkey_pass' option in config file
+:param config: path of configuration file containing common server options, for example ``/etc/zarafa/admin.cfg``
+:param log: logger object to receive useful (debug) information
+:param options: OptionParser instance to get settings from (see :func:`parser`)
+
+    
+"""
+
     def __init__(self, options=None, config=None, sslkey_file=None, sslkey_pass=None, server_socket=None, log=None, service=None):
         self.log = log
-        # default connection
-        self.sslkey_file = sslkey_file
-        self.sslkey_pass = sslkey_pass
-        self.server_socket = server_socket or os.getenv('ZARAFA_SOCKET', 'file:///var/run/zarafa')
-        # check optional config file
-        if config:
-            self.sslkey_file = config.get('sslkey_file') or self.sslkey_file
-            self.sslkey_pass = config.get('sslkey_pass') or self.sslkey_pass
-            self.server_socket = config.get('server_socket') or self.server_socket
-        # override with command-line args
+        self.server_socket = self.sslkey_file = self.sslkey_pass = None
+
+        # get cmd-line options
         self.options = options
         if not self.options:
-            self.options, args = parser('skpcumfF').parse_args() # XXX store args?
-        if getattr(self.options, 'config_file', None):
-            self.options.config_file = os.path.abspath(self.options.config_file) # XXX useful during testing. could be generalized with optparse callback?
-        if getattr(self.options, 'config_file', None):
-            cfg = globals()['Config'](None, filename=self.options.config_file) # XXX ugh
-            self.server_socket = cfg.get('server_socket') or self.server_socket
-            self.sslkey_file = cfg.get('sslkey_file') or self.sslkey_file
-            self.sslkey_pass = cfg.get('sslkey_pass') or self.sslkey_pass
-        self.server_socket = getattr(self.options, 'server_socket', None) or self.server_socket
-        self.sslkey_file = getattr(self.options, 'sslkey_file', None) or self.sslkey_file
-        self.sslkey_pass = getattr(self.options, 'sslkey_pass', None) or self.sslkey_pass
+            self.options, args = parser('skpcumfF').parse_args()
+
+        # determine config file
+        if config:
+            pass
+        elif getattr(self.options, 'config_file', None):
+            config_file = os.path.abspath(self.options.config_file)
+            config = globals()['Config'](None, filename=self.options.config_file) # XXX snarf
+        else:
+            config_file = '/etc/zarafa/admin.cfg'
+            try:
+                file(config_file) # check if accessible
+                config = globals()['Config'](None, filename=config_file) # XXX snarf
+            except IOError:
+                pass
+
+        # get defaults
+        if config:
+            self.server_socket = config.get('server_socket')
+            self.sslkey_file = config.get('sslkey_file') 
+            self.sslkey_pass = config.get('sslkey_pass')
+        else:
+            self.server_socket = os.getenv('ZARAFA_SOCKET', 'file:///var/run/zarafa')
+
+        # override with explicit or command-line args
+        self.server_socket = server_socket or getattr(self.options, 'server_socket', None) or self.server_socket
+        self.sslkey_file = sslkey_file or getattr(self.options, 'sslkey_file', None) or self.sslkey_file
+        self.sslkey_pass = sslkey_pass or getattr(self.options, 'sslkey_pass', None) or self.sslkey_pass
+
+        # make actual connection. in case of service, wait until this succeeds.
         while True:
             try:
                 self.mapisession = OpenECSession('SYSTEM', '', self.server_socket, sslkey_file=self.sslkey_file, sslkey_pass=self.sslkey_pass)
@@ -290,6 +372,8 @@ class Server(object):
                     time.sleep(5)
                 else:
                     raise ZarafaException("could not connect to server at '%s'" % self.server_socket)
+
+        # starting talking dirty
         self.mapistore = GetDefaultStore(self.mapisession)
         self.admin_store = Store(self, self.mapistore)
         self.sa = self.mapistore.QueryInterface(IID_IECServiceAdmin)
@@ -326,18 +410,31 @@ class Server(object):
 
     @property
     def guid(self):
+        """ Server GUID """
+
         return bin2hex(HrGetOneProp(self.mapistore, PR_MAPPING_SIGNATURE).Value)
 
     def user(self, name):
+        """ Return :class:`user <User>` with given name; raise exception if not found """
+
         return User(self, name)
 
     def get_user(self, name):
+        """ Return :class:`user <User>` with given name or *None* if not found """
+
         try:
             return self.user(name)
         except ZarafaException:
             pass
 
     def users(self, remote=True, system=False, parse=False):
+        """ Return all :class:`users <User>` on server 
+
+            :param remote: include users on remote server nodes
+            :param system: include system users
+            :param parse: check command-line for ``--user`` arguments and only include these
+        """
+
         if parse:
             if self.options.users:
                 for username in self.options.users:
@@ -348,13 +445,13 @@ class Server(object):
                 for user in Company(self, name).users(): # XXX remote/system check
                     yield user
         except MAPIErrorNoSupport:
-            for username in AddressBook.GetUserList(self.mapisession, None, MAPI_UNICODE): # XXX sa.GetUserList broken for unicode?
+            for username in AddressBook.GetUserList(self.mapisession, None, MAPI_UNICODE):
                 user = User(self, username)
                 if system or username != u'SYSTEM':
                     if remote or user._ecuser.Servername in (self.name, ''):
                         yield user
 
-    def create_user(self, name, password=None, company=None, fullname=None): # XXX unicode 
+    def create_user(self, name, password=None, company=None, fullname=None, create_store=True):
         name = unicode(name)
         fullname = unicode(fullname or '')
         if password:
@@ -363,19 +460,26 @@ class Server(object):
             company = unicode(company)
         if company and company != u'Default':
             usereid = self.sa.CreateUser(ECUSER(u'%s@%s' % (name, company), password, u'email@domain.com', fullname), MAPI_UNICODE)
-            return self.company(company).user(u'%s@%s' % (name, company))
+            user = self.company(company).user(u'%s@%s' % (name, company))
         else:
             usereid = self.sa.CreateUser(ECUSER(name, password, u'email@domain.com', fullname), MAPI_UNICODE)
-            return self.user(name)
+            user = self.user(name)
+        if create_store:
+            self.sa.CreateStore(ECSTORE_TYPE_PRIVATE, user.userid.decode('hex'))
+        return user
 
     def remove_user(self, name):
         user = self.user(name)
         self.sa.DeleteUser(user._ecuser.UserID)
 
     def company(self, name):
+        """ Return :class:`company <Company>` with given name; raise exception if not found """
+
         return Company(self, name)
 
     def get_company(self, name):
+        """ Return :class:`company <Company>` with given name or *None* if not found """
+
         try:
             return self.company(name)
         except ZarafaException:
@@ -385,7 +489,12 @@ class Server(object):
         self.sa.GetCompanyList(0) # XXX exception for single-tenant....
         return MAPI.Util.AddressBook.GetCompanyList(self.mapisession, MAPI_UNICODE)
 
-    def companies(self, remote=True):
+    def companies(self, remote=True): # XXX remote?
+        """ Return all :class:`companies <Company>` on server 
+
+            :param remote: include companies without users on this server node
+        """
+
         try:
             for name in self._companylist():
                 yield Company(self, name)
@@ -397,7 +506,9 @@ class Server(object):
         companyeid = self.sa.CreateCompany(ECCOMPANY(name, None), MAPI_UNICODE)
         return self.company(name)
 
-    def store(self, guid): # XXX not unique across servers?
+    def store(self, guid):
+        """ Return :class:`store <Store>` with given GUID; raise exception if not found """
+
         if len(guid) != 32:
             raise ZarafaException("invalid store id: '%s'" % guid)
         try:
@@ -412,20 +523,32 @@ class Server(object):
         raise ZarafaException("no such store: '%s'" % guid)
 
     def get_store(self, guid):
+        """ Return :class:`store <Store>` with given GUID or *None* if not found """
+
         try:
             return self.store(guid)
         except ZarafaException:
             pass
 
-    def stores(self, system=False):
+    def stores(self, system=False, remote=False): # XXX implement remote
+        """ Return all :class:`stores <Store>` on server node
+
+        :param system: include system stores
+        :param remote: include stores on other nodes
+
+        """
+
         table = self.ems.GetMailboxTable(None, 0)
         table.SetColumns([PR_DISPLAY_NAME_W, PR_ENTRYID, PR_EC_STORETYPE], 0)
         for row in table.QueryRows(100, 0):
-             if system or row[0].Value != 'Inbox - SYSTEM': # XXX improve check..
-                 yield Store(self, self.mapisession.OpenMsgStore(0, row[1].Value, None, MDB_WRITE), row[2].Value == ECSTORE_TYPE_PUBLIC)
+            store = Store(self, self.mapisession.OpenMsgStore(0, row[1].Value, None, MDB_WRITE), row[2].Value == ECSTORE_TYPE_PUBLIC)
+            if system or (store.user and store.user.name != 'SYSTEM'):
+                yield store
 
     @property
     def public_store(self):
+        """ public :class:`store <Store>` in single-company mode """
+
         try:
             self.sa.GetCompanyList(0)
             raise ZarafaException('request for server-wide public store in multi-company setup')
@@ -434,9 +557,19 @@ class Server(object):
 
     @property
     def state(self):
+        """ Current server state """
+
         return _state(self.mapistore)
 
     def sync(self, importer, state, log=None, max_changes=None):
+        """ Perform synchronization against server node 
+
+        :param importer: importer instance with callbacks to process changes
+        :param state: start from this state (has to be given)
+        :log: logger instance to receive important warnings/errors 
+        
+        """
+
         importer.store = None
         return _sync(self, self.mapistore, importer, state, log or self.log, max_changes)
 
@@ -447,54 +580,84 @@ class Server(object):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
 
 class Company(object):
+    """ Company class """
+
     def __init__(self, server, name):
-        self.name = name = unicode(name)
+        self._name = name = unicode(name)
         self.server = server
         if name != u'Default': # XXX
             try:
-                self._eccompany = self.server.sa.GetCompany(self.server.sa.ResolveCompanyName(self.name, MAPI_UNICODE), MAPI_UNICODE)
+                self._eccompany = self.server.sa.GetCompany(self.server.sa.ResolveCompanyName(self._name, MAPI_UNICODE), MAPI_UNICODE)
             except MAPIErrorNotFound:
                 raise ZarafaException("no such company: '%s'" % name)
 
     @property
+    def name(self):
+        """ Company name """
+
+        return self._name
+
+    @property
     def public_store(self):
-        if self.name == u'Default': # XXX 
+        """ Company public :class:`store <Store>` """
+
+        if self._name == u'Default': # XXX 
             pubstore = GetPublicStore(self.server.mapisession)
             if pubstore is None:
                 return None
             return Store(self.server, pubstore, True)
-        publicstoreid = self.server.ems.CreateStoreEntryID(None, self.name, 0)
+        publicstoreid = self.server.ems.CreateStoreEntryID(None, self._name, 0)
         publicstore = self.server.mapisession.OpenMsgStore(0, publicstoreid, None, MDB_WRITE)
         return Store(self.server, publicstore, True)
 
     def user(self, name):
+        """ Return :class:`user <User>` with given name; raise exception if not found """
+
+        name = unicode(name)
         for user in self.users():
             if user.name == name:
                 return User(self.server, name)
 
+    def get_user(self, name):
+        """ Return :class:`user <User>` with given name or *None* if not found """
+
+        try:
+            return self.user(name)
+        except ZarafaException:
+            pass
+
     def users(self):
-        for username in AddressBook.GetUserList(self.server.mapisession, self.name if self.name != u'Default' else None, MAPI_UNICODE): # XXX serviceadmin?
+        """ Return all :class:`users <User>` within company """
+
+        for username in AddressBook.GetUserList(self.server.mapisession, self._name if self._name != u'Default' else None, MAPI_UNICODE): # XXX serviceadmin?
             if username != 'SYSTEM':
                 yield User(self.server, username)
 
     def create_user(self, name, password=None):
-        self.server.create_user(name, password=password, company=self.name)
-        return self.user('%s@%s' % (name, self.name))
+        self.server.create_user(name, password=password, company=self._name)
+        return self.user('%s@%s' % (name, self._name))
 
     @property
     def quota(self):
-        if self.name == u'Default':
+        """ Company :class:`Quota` """
+
+        if self._name == u'Default':
             return Quota(self.server, None)
         else:
             return Quota(self.server, self._eccompany.CompanyID)
 
     def __unicode__(self):
-        return u'Company(%s)' % self.name
+        return u'Company(%s)' % self._name
 
     def __repr__(self):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
 
 class Store(object):
+    """ 
+    Item store
+    
+    """
+
     def __init__(self, server, mapistore, public=False):
         self.server = server
         self.mapiobj = mapistore
@@ -502,40 +665,63 @@ class Store(object):
 
     @property
     def guid(self):
+        """ Store GUID """
+
         return bin2hex(HrGetOneProp(self.mapiobj, PR_STORE_RECORD_KEY).Value)
 
     @property
     def inbox(self):
+        """ :class:`Folder` designated as inbox """
+
         return Folder(self, self.mapiobj.GetReceiveFolder('IPM', 0)[0])
 
     @property
     def calendar(self):
+        """ :class:`Folder` designated as calendar """
+
         root = self.mapiobj.OpenEntry(None, None, 0)
         return Folder(self, HrGetOneProp(root, PR_IPM_APPOINTMENT_ENTRYID).Value)
 
     @property
     def contacts(self):
+        """ :class:`Folder` designated as contacts """
+
         root = self.mapiobj.OpenEntry(None, None, 0)
         return Folder(self, HrGetOneProp(root, PR_IPM_CONTACT_ENTRYID).Value)
 
     @property
     def user(self):
+        """ Store :class:`owner <User>` """
+
         try:
             userid = HrGetOneProp(self.mapiobj, PR_MAILBOX_OWNER_ENTRYID).Value
             return User(self.server, self.server.sa.GetUser(userid, 0).Username)
         except MAPIErrorNotFound:
             pass
 
-    def folder(self, name): # XXX sloow
-        matches = [f for f in self.folders() if f.name == name]
+    def folder(self, key): # XXX sloowowowww
+        """ Return :class:`Folder` with given name or entryid; raise exception if not found
+
+            :param key: name or entryid
+        """
+
+        matches = [f for f in self.folders() if f.entryid == key or f.name == key]
         if len(matches) == 0:
-            raise ZarafaException("no such folder: '%s'" % name)
+            raise ZarafaException("no such folder: '%s'" % key)
         elif len(matches) > 1:
-            raise ZarafaException("multiple folders with name '%s'" % name)
+            raise ZarafaException("multiple folders with name/entryid '%s'" % key)
         else:
             return matches[0]
 
     def folders(self, recurse=True, system=False, parse=False):
+        """ Return all :class:`folders <Folder>` in store
+
+        :param recurse: include all sub-folders
+        :param system: include system folders
+        :param parse: check command-line for ``--folder`` arguments and only include these
+        
+        """
+
         filter_names = None
         if parse:
             filter_names = self.server.options.folders
@@ -568,6 +754,8 @@ class Store(object):
                             yield subfolder
 
     def item(self, entryid):
+        """ Return :class:`Item` with given entryid; raise exception of not found """ # XXX better exception?
+
         item = Item() # XXX copy-pasting..
         item.store = self
         item.server = self.server
@@ -576,6 +764,8 @@ class Store(object):
 
     @property
     def size(self):
+        """ Store size """
+
         return HrGetOneProp(self.mapiobj, PR_MESSAGE_SIZE_EXTENDED).Value
 
     def config_item(self, name):
@@ -596,6 +786,11 @@ class Store(object):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
 
 class Folder(object):
+    """ 
+    Item Folder 
+
+    """
+
     def __init__(self, store, entryid, associated=False):
         self.store = store
         self.server = store.server
@@ -605,6 +800,8 @@ class Folder(object):
 
     @property
     def entryid(self):
+        """ Folder entryid """
+
         return bin2hex(self._entryid)
 
     @property
@@ -613,9 +810,22 @@ class Folder(object):
 
     @property
     def name(self):
+        """ Folder name """
+
         return HrGetOneProp(self.mapiobj, PR_DISPLAY_NAME_W).Value
 
+    def item(self, entryid):
+        """ Return :class:`Item` with given entryid; raise exception of not found """ # XXX better exception?
+
+        item = Item() # XXX copy-pasting..
+        item.store = self.store
+        item.server = self.server
+        item.mapiobj = _openentry_raw(self.store.mapiobj, entryid.decode('hex'), MAPI_MODIFY)
+        return item
+
     def items(self):
+        """ Return all :class:`items <Item>` in folder, reverse sorted on received date """
+
         table = self.mapiobj.GetContentsTable(self.content_flag)
         table.SortTable(SSortOrderSet([SSort(PR_MESSAGE_DELIVERY_TIME, TABLE_SORT_DESCEND)], 0, 0), 0) # XXX configure
         while True:
@@ -629,18 +839,13 @@ class Folder(object):
                 item.mapiobj = _openentry_raw(self.store.mapiobj, PpropFindProp(row, PR_ENTRYID).Value, MAPI_MODIFY)
                 yield item
 
-    def item(self, entryid):
-        item = Item() # XXX copy-pasting..
-        item.store = self.store
-        item.server = self.server
-        item.mapiobj = _openentry_raw(self.store.mapiobj, entryid.decode('hex'), MAPI_MODIFY)
-        return item
-
     def create_item(self, eml=None): # XXX associated
         return Item(self, eml=eml)
 
     @property
     def size(self): # XXX bit slow perhaps? :P
+        """ Folder size """
+
         size = 0
         table = self.mapiobj.GetContentsTable(self.content_flag)
         table.SetColumns([PR_MESSAGE_SIZE], 0)
@@ -651,7 +856,13 @@ class Folder(object):
         return size
 
     @property
-    def count(self):
+    def count(self, recurse=False): # XXX implement recurse?
+        """ Number of items in folder 
+
+        :param recurse: include items in sub-folders
+        
+        """
+
         return self.mapiobj.GetContentsTable(self.content_flag).GetRowCount(0) # XXX PR_CONTENT_COUNT, PR_ASSOCIATED_CONTENT_COUNT
 
     def delete(self, items): # XXX associated
@@ -667,6 +878,11 @@ class Folder(object):
             self.mapiobj.DeleteFolder(entryid, 0, None, DEL_FOLDERS|DEL_MESSAGES)
 
     def folders(self, recurse=True, depth=0):
+        """ Return all :class:`sub-folders <Folder>` in folder
+
+        :param recurse: include all sub-folders
+        """
+
         if self.mapiobj.GetProps([PR_SUBFOLDERS], MAPI_UNICODE)[0].Value:
             table = self.mapiobj.GetHierarchyTable(MAPI_UNICODE)
             table.SetColumns([PR_ENTRYID, PR_FOLDER_TYPE, PR_DISPLAY_NAME_W], 0)
@@ -700,9 +916,19 @@ class Folder(object):
 
     @property
     def state(self):
+        """ Current folder state """
+
         return _state(self.mapiobj)
 
     def sync(self, importer, state=None, log=None, max_changes=None):
+        """ Perform synchronization against folder
+
+        :param importer: importer instance with callbacks to process changes
+        :param state: start from this state; if not given sync from scratch
+        :log: logger instance to receive important warnings/errors 
+        
+        """
+
         if state is None:
             state = (8*'\0').encode('hex').upper()
         importer.store = self.store
@@ -732,6 +958,8 @@ class Folder(object):
 
     @property
     def associated(self):
+        """ Associated folder containing hidden items """
+
         return Folder(self.store, self._entryid, associated=True)
 
     def __iter__(self):
@@ -744,6 +972,8 @@ class Folder(object):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
 
 class Item(object):
+    """ Item """
+
     def __init__(self, folder=None, eml=None, mail=None):
         # TODO: self.folder fix this!
         self.emlfile = eml
@@ -785,45 +1015,48 @@ class Item(object):
 
     @property
     def entryid(self):
+        """ Item entryid """
+
         return bin2hex(HrGetOneProp(self.mapiobj, PR_ENTRYID).Value)
 
     @property
     def sourcekey(self):
+        """ Item sourcekey """
+
         if not hasattr(self, '_sourcekey'): # XXX more general caching solution
             self._sourcekey = bin2hex(HrGetOneProp(self.mapiobj, PR_SOURCE_KEY).Value)
         return self._sourcekey
 
     @property
     def subject(self):
+        """ Item subject or *None* if no subject """
+
         try:
             return HrGetOneProp(self.mapiobj, PR_SUBJECT_W).Value
         except MAPIErrorNotFound:
             pass
 
     @property
+    def body(self):
+        """ Item :class:`body <Body>` or *None* if no body """
+        try:
+            return Body(self)
+        except MAPIErrorNotFound:
+            pass
+
+    @property
     def received(self):
+        """ Datetime instance with item delivery time """
+
         try:
             return self.prop(PR_MESSAGE_DELIVERY_TIME).value
         except MAPIErrorNotFound:
             pass
 
     @property
-    def body(self):
-        mapiitem = self._arch_item # XXX server already goes 'underwater'.. check details
-        try:
-            stream = mapiitem.OpenProperty(PR_BODY_W, IID_IStream, 0, 0)
-            data = []
-            while True:
-                blup = stream.Read(0xFFFFF) # 1 MB
-                if len(blup) == 0:
-                    break
-                data.append(blup)
-            return ''.join(data).decode('utf-32le')
-        except MAPIErrorNotFound:
-            pass
-
-    @property
     def stubbed(self):
+        """ Is item stubbed by archiver? """
+
         ids = self.mapiobj.GetIDsFromNames(NAMED_PROPS_ARCHIVER, 0) # XXX cache folder.GetIDs..?
         PROP_STUBBED = CHANGE_PROP_TYPE(ids[2], PT_BOOLEAN)
         try:
@@ -838,6 +1071,12 @@ class Item(object):
         return _props(self.mapiobj, namespace)
 
     def attachments(self, embedded=False):
+        """ Return item :class:`attachments <Attachment>`
+
+        :param embedded: include embedded attachments
+        
+        """
+
         mapiitem = self._arch_item
         table = mapiitem.GetAttachmentTable(MAPI_DEFERRED_ERRORS)
         table.SetColumns([PR_ATTACH_NUM, PR_ATTACH_METHOD], TBL_BATCH)
@@ -853,10 +1092,13 @@ class Item(object):
         return attachments
 
     def header(self, name):
-       return self.headers().get(name)
+        """ Return transport message header with given name """
+
+        return self.headers().get(name)
 
     def headers(self):
-        # Fetches the mail headers and returns a dict
+        """ Return transport message headers """
+
         try:
             message_headers = self.prop(PR_TRANSPORT_MESSAGE_HEADERS)
             headers = Parser().parsestr(message_headers.value, headersonly=True)
@@ -865,6 +1107,8 @@ class Item(object):
             return {}
 
     def eml(self):
+        """ Return .eml version of item """
+
         if not self.emlfile:
             sopt = inetmapi.sending_options()
             sopt.no_recipients_workaround = True
@@ -873,6 +1117,8 @@ class Item(object):
 
     @property
     def sender(self):
+        """ Sender :class:`Address` """
+
         return Address(self.server, *(self.prop(p).value for p in (PR_SENT_REPRESENTING_ADDRTYPE, PR_SENT_REPRESENTING_NAME, PR_SENT_REPRESENTING_EMAIL_ADDRESS, PR_SENT_REPRESENTING_ENTRYID)))
 
     def table(self, name, restriction=None, order=None, columns=None):
@@ -883,6 +1129,8 @@ class Item(object):
         yield self.table(PR_MESSAGE_ATTACHMENTS)
 
     def recipients(self):
+        """ Return recipient :class:`addresses <Address>` """
+
         result = []
         for row in self.table(PR_MESSAGE_RECIPIENTS):
             row = dict([(x.proptag, x) for x in row])
@@ -895,16 +1143,66 @@ class Item(object):
     def __repr__(self):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
 
+class Body:
+    """ Body """
+
+    def __init__(self, mapiitem):
+        self.mapiitem = mapiitem
+
+    @property
+    def text(self):
+        """ Plaintext representation (possibly from archive server) """
+
+        mapiitem = self.mapiitem._arch_item # XXX server already goes 'underwater'.. check details
+        stream = mapiitem.OpenProperty(PR_BODY_W, IID_IStream, 0, 0)
+        data = []
+        while True:
+            blup = stream.Read(0xFFFFF) # 1 MB
+            if len(blup) == 0:
+                break
+            data.append(blup)
+        return ''.join(data).decode('utf-32le')
+
+    @property
+    def html(self):
+        """ HTML representation (possibly from archive server), in original encoding """
+
+        mapiitem = self.mapiitem._arch_item
+        stream = mapiitem.OpenProperty(PR_HTML, IID_IStream, 0, 0)
+        data = []
+        while True:
+            blup = stream.Read(0xFFFFF) # 1 MB
+            if len(blup) == 0:
+                break
+            data.append(blup)
+        return ''.join(data) # XXX do we need to do something about encodings? 
+
+    def __unicode__(self):
+        return u'Body()'
+
+    def __repr__(self):
+        return unicode(self).encode(sys.stdout.encoding or 'utf8')
+
 class Address:
+    """ Address """
+
     def __init__(self, server, addrtype, name, email, entryid):
         self.server = server
         self.addrtype = addrtype
-        self.name = name
+        self._name = name
         self._email = email
         self.entryid = entryid
 
     @property
+    def name(self):
+        """ Full name """
+
+        return self._name
+
+    @property
     def email(self):
+        """ Email address """
+
         if self.addrtype == 'ZARAFA':
             try:
                 mapiuser = self.server.mapisession.OpenEntry(self.entryid, None, 0)
@@ -921,18 +1219,16 @@ class Address:
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
 
 class Attachment(object):
+    """ Attachment """
+
     def __init__(self, att):
         self.att = att
         self._data = None
 
-    def prop(self, proptag):
-        return _prop(self, self.att, proptag)
-
-    def props(self):
-        return _props(self.att)
-
     @property
-    def mimetag(self):
+    def mimetype(self):
+        """ Mime-type or *None* if not found """
+
         try:
             return HrGetOneProp(self.att, PR_ATTACH_MIME_TAG).Value
         except MAPIErrorNotFound:
@@ -940,12 +1236,16 @@ class Attachment(object):
 
     @property
     def filename(self):
+        """ Filename or *None* if not found """
+
         try:
             return HrGetOneProp(self.att, PR_ATTACH_LONG_FILENAME_W).Value
         except MAPIErrorNotFound:
             pass
 
     def __len__(self):
+        """ Size """
+
         try:
             return int(HrGetOneProp(self.att, PR_ATTACH_SIZE).Value) # XXX why is this not equal to len(data)??
         except MAPIErrorNotFound:
@@ -953,6 +1253,8 @@ class Attachment(object):
 
     @property
     def data(self):
+        """ Binary data """
+
         if self._data is not None:
             return self._data
         try:
@@ -978,30 +1280,52 @@ class Attachment(object):
     def name(self):
         return self.filename
 
+    def prop(self, proptag):
+        return _prop(self, self.att, proptag)
+
+    def props(self):
+        return _props(self.att)
+
 class User(object):
+    """ User class """
+
     def __init__(self, server, name):
-        self.name = name = unicode(name)
+        self._name = name = unicode(name)
         self.server = server
         try:
-            self._ecuser = self.server.sa.GetUser(self.server.sa.ResolveUserName(self.name, MAPI_UNICODE), MAPI_UNICODE)
+            self._ecuser = self.server.sa.GetUser(self.server.sa.ResolveUserName(self._name, MAPI_UNICODE), MAPI_UNICODE)
         except MAPIErrorNotFound:
             raise ZarafaException("no such user: '%s'" % name)
         self.mapiobj = self.server.mapisession.OpenEntry(self._ecuser.UserID, None, 0)
 
     @property
+    def name(self):
+        """ Account name """
+
+        return self._name
+
+    @property
+    def fullname(self):
+        """ Full name """
+
+        return self._ecuser.FullName
+
+    @property
     def email(self):
+        """ Email address """
+
         return self._ecuser.Email
 
     @property
     def userid(self):
+        """ Userid """
+
         return bin2hex(self._ecuser.UserID)
 
     @property
-    def fullname(self):
-        return self._ecuser.FullName
-
-    @property
     def company(self):
+        """ :class:`Company` the user belongs to """
+
         return Company(self.server, HrGetOneProp(self.mapiobj, PR_EC_COMPANY_NAME).Value or u'Default')
 
     @property # XXX
@@ -1011,8 +1335,10 @@ class User(object):
 
     @property
     def store(self):
+        """ Default :class:`Store` for user or *None* if no store is attached """
+
         try:
-            storeid = self.server.ems.CreateStoreEntryID(None, self.name, MAPI_UNICODE)
+            storeid = self.server.ems.CreateStoreEntryID(None, self._name, MAPI_UNICODE)
             mapistore = self.server.mapisession.OpenMsgStore(0, storeid, IID_IMsgStore, MDB_WRITE|MAPI_DEFERRED_ERRORS)
             return Store(self.server, mapistore)
         except MAPIErrorNotFound:
@@ -1020,6 +1346,8 @@ class User(object):
 
     @property
     def archive_store(self):
+        """ Archive :class:`Store` for user or *None* if not found """
+
         mapistore = self.store.mapiobj
         ids = mapistore.GetIDsFromNames(NAMED_PROPS_ARCHIVER, 0) # XXX merge namedprops stuff
         PROP_STORE_ENTRYIDS = CHANGE_PROP_TYPE(ids[0], PT_MV_BINARY)
@@ -1050,24 +1378,46 @@ class User(object):
 
     @property
     def quota(self):
+        """ User :class:`Quota` """
+
         return Quota(self.server, self._ecuser.UserID)
 
     def __unicode__(self):
-        return u'User(%s)' % self.name
+        return u'User(%s)' % self._name
 
     def __repr__(self):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
 
 class Quota(object):
+    """ Quota """
+
     def __init__(self, server, userid):
         self.server = server
         self.userid = userid
-        self.warning_limit = self.soft_limit = self.hard_limit = 0 # XXX quota for 'default' company?
+        self._warning_limit = self._soft_limit = self._hard_limit = 0 # XXX quota for 'default' company?
         if userid:
             quota = server.sa.GetQuota(userid, False)
-            self.warning_limit = quota.llWarnSize
-            self.soft_limit = quota.llSoftSize
-            self.hard_limit = quota.llHardSize
+            self._warning_limit = quota.llWarnSize
+            self._soft_limit = quota.llSoftSize
+            self._hard_limit = quota.llHardSize
+
+    @property
+    def warning_limit(self):
+        """ Warning limit """
+
+        return self._warning_limit
+
+    @property
+    def soft_limit(self):
+        """ Soft limit """
+
+        return self._soft_limit
+
+    @property
+    def hard_limit(self):
+        """ Hard limit """
+
+        return self._hard_limit
 
     @property
     def recipients(self):
@@ -1253,20 +1603,56 @@ def logger(service, options=None, stdout=False, config=None, name=''):
     logger.setLevel(log_level)
     return logger
 
-def parser(opts='cmskpu'):
+def parser(options='cmskpu'):
+    """ 
+Return OptionParser instance from the standard ``optparse`` module, containing common zarafa command-line options
+
+:param options: string containing a char for each desired option, default "cmskpu" (see below)
+
+Available options:
+
+-c, --config: path to configuration file 
+
+-k, --sslkey-file: SSL key file
+
+-p, --sslkey-password: SSL key password
+
+-s, --server: address of the Zarafa server
+
+-u, --user: Specify one or more users
+
+-f, --folder: Specify one or more folders
+
+-F, --foreground: Run service in foreground
+
+-m, --modify: Database may be changed (opposite of "dry-run")
+    
+"""
+
     parser = optparse.OptionParser()
-    if 's' in opts: parser.add_option('-s', '--server', dest='server_socket', help='Connect to server HOST', metavar='HOST')
-    if 'k' in opts: parser.add_option('-k', '--sslkey-file', dest='sslkey_file', help='SSL key file')
-    if 'p' in opts: parser.add_option('-p', '--sslkey-pass', dest='sslkey_pass', help='SSL key password')
-    if 'c' in opts: parser.add_option('-c', '--config', dest='config_file', help='Load settings from FILE', metavar='FILE')
-    if 'u' in opts: parser.add_option('-u', '--user', dest='users', action='append', default=[], help='Run program for specific user(s)', metavar='USER')
-    if 'F' in opts: parser.add_option('-F', '--foreground', dest='foreground', action='store_true', help='Run program in foreground')
-    if 'f' in opts: parser.add_option('-f', '--folder', dest='folders', action='append', default=[], help='Run program for specific folder(s)', metavar='FOLDER')
-    if 'm' in opts: parser.add_option('-m', '--modify', dest='modify', action='store_true', help='Actually modify database')
+    if 's' in options: parser.add_option('-s', '--server', dest='server_socket', help='Connect to server HOST', metavar='HOST')
+    if 'k' in options: parser.add_option('-k', '--sslkey-file', dest='sslkey_file', help='SSL key file')
+    if 'p' in options: parser.add_option('-p', '--sslkey-pass', dest='sslkey_pass', help='SSL key password')
+    if 'c' in options: parser.add_option('-c', '--config', dest='config_file', help='Load settings from FILE', metavar='FILE')
+    if 'u' in options: parser.add_option('-u', '--user', dest='users', action='append', default=[], help='Run program for specific user(s)', metavar='USER')
+    if 'F' in options: parser.add_option('-F', '--foreground', dest='foreground', action='store_true', help='Run program in foreground')
+    if 'f' in options: parser.add_option('-f', '--folder', dest='folders', action='append', default=[], help='Run program for specific folder(s)', metavar='FOLDER')
+    if 'm' in options: parser.add_option('-m', '--modify', dest='modify', action='store_true', help='Actually modify database')
     return parser
 
 @contextlib.contextmanager # XXX it logs errors, that's all you need to know :-)
 def log_exc(log):
+    """
+Context-manager to log any exception in sub-block to given logger instance
+
+:param log: logger instance
+
+Example usage::
+
+    with log_exc(log):
+        .. # any exception will be logged when exiting sub-block
+
+"""
     try: yield
     except Exception, e: log.error(traceback.format_exc(e))
 
@@ -1348,6 +1734,20 @@ class ConfigOption:
         return _human_to_bytes(value)
 
 class Config:
+    """
+Configuration class
+
+:param config: dictionary describing configuration options. TODO describe available options
+
+Example::
+
+    config = Config({ 
+        'some_str': Config.String(default='blah'),
+        'number': Config.Integer(),
+        'filesize': Config.size(), # understands '5MB' etc
+    })
+
+"""
     def __init__(self, config, service=None, options=None, filename=None, log=None):
         self.config = config
         self.service = service
@@ -1524,6 +1924,20 @@ class QueueListener(object):
         self._thread = None
 
 class Service:
+    """ 
+Encapsulates everything to create a simple Zarafa service, such as:
+
+- Locating and parsing a configuration file
+- Performing logging, as specifified in the configuration file
+- Handling common command-line options (-c, -F)
+- Daemonization (if no -F specified)
+
+:param name: name of the service; if for example 'search', the configuration file should be called ``/etc/zarafa/search.cfg`` or passed with -c
+:param config: :class:`Configuration <Config>` to use
+:param options: OptionParser instance to get settings from (see :func:`parser`)
+
+"""
+
     def __init__(self, name, config=None, options=None, **kwargs):
         self.name = name
         self.__dict__.update(kwargs)
