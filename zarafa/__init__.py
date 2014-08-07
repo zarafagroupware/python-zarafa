@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-
-""" 
+"""
 High-level python bindings for Zarafa
 
 Copyright 2014 Zarafa and contributors, license AGPLv3 (see LICENSE file for details)
@@ -373,7 +371,7 @@ Looks at command-line to see if another server address or other related options 
                 else:
                     raise ZarafaException("could not connect to server at '%s'" % self.server_socket)
 
-        # starting talking dirty
+        # start talking dirty
         self.mapistore = GetDefaultStore(self.mapisession)
         self.admin_store = Store(self, self.mapistore)
         self.sa = self.mapistore.QueryInterface(IID_IECServiceAdmin)
@@ -750,7 +748,7 @@ class Store(object):
                     yield folder
                 if recurse:
                     for subfolder in folder.folders(depth=1):
-                        if not filter_names or folder.name in filter_names:
+                        if not filter_names or subfolder.name in filter_names:
                             yield subfolder
 
     def item(self, entryid):
@@ -877,13 +875,28 @@ class Folder(object):
         for entryid in folder_entryids:
             self.mapiobj.DeleteFolder(entryid, 0, None, DEL_FOLDERS|DEL_MESSAGES)
 
+    def folder(self, key): # XXX sloowowowww, see also Store.folder
+        """ Return :class:`Folder` with given name or entryid; raise exception if not found
+
+            :param key: name or entryid
+        """
+
+        matches = [f for f in self.folders() if f.entryid == key or f.name == key]
+        if len(matches) == 0:
+            raise ZarafaException("no such folder: '%s'" % key)
+        elif len(matches) > 1:
+            raise ZarafaException("multiple folders with name/entryid '%s'" % key)
+        else:
+            return matches[0]
+
     def folders(self, recurse=True, depth=0):
         """ Return all :class:`sub-folders <Folder>` in folder
 
         :param recurse: include all sub-folders
         """
 
-        if self.mapiobj.GetProps([PR_SUBFOLDERS], MAPI_UNICODE)[0].Value:
+#        if self.mapiobj.GetProps([PR_SUBFOLDERS], MAPI_UNICODE)[0].Value: # XXX no worky?
+        if True:
             table = self.mapiobj.GetHierarchyTable(MAPI_UNICODE)
             table.SetColumns([PR_ENTRYID, PR_FOLDER_TYPE, PR_DISPLAY_NAME_W], 0)
             rows = table.QueryRows(-1, 0)
@@ -898,7 +911,8 @@ class Folder(object):
                         yield subfolder
 
     def create_folder(self, name):
-        return self.mapiobj.CreateFolder(FOLDER_GENERIC, name, '', None, 0)
+        mapifolder = self.mapiobj.CreateFolder(FOLDER_GENERIC, name, '', None, 0)
+        return Folder(self.store, HrGetOneProp(mapifolder, PR_ENTRYID).Value)
 
     def prop(self, proptag):
         return _prop(self, self.mapiobj, proptag)
