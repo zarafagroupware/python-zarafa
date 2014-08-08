@@ -43,9 +43,9 @@ def main():
                     continue
                 if item.received.date() < datetime.date.today()-datetime.timedelta(days=int(args[0])):
                     if options.verbose:
-                        print 'Email:', item.subject, 'Received:', getMailAge(item.prop(PR_MESSAGE_DELIVERY_TIME).mapi_value.unixtime)
+                        print 'Item:', item.subject, 'Received:', getMailAge(item.prop(PR_MESSAGE_DELIVERY_TIME).mapi_value.unixtime)
                     else:
-                        print 'Email:', item.subject
+                        print 'Item:', item.subject
                 if options.modify:
                     folder.delete([item])
 
