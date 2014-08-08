@@ -1,7 +1,7 @@
-"""
+""" 
 High-level python bindings for Zarafa
 
-Copyright 2014 Zarafa and contributors, license AGPLv3 (see LICENSE file for details)
+Copyright 2014 Zarafa and contributors, license AGPLv3 (see LICENSE file for details)                                                                                                                                                                                                                                          
 
 Some goals:
 
@@ -672,6 +672,14 @@ class Store(object):
         """ :class:`Folder` designated as inbox """
 
         return Folder(self, self.mapiobj.GetReceiveFolder('IPM', 0)[0])
+
+    @property
+    def spam(self):
+        """ :class:`Folder` designated as spam """
+        
+        root = self.mapiobj.OpenEntry(None, None, 0)
+        # PR_ADDITIONAL_REN_ENTRYIDS is a multi-value property, 4th entry is the spam folder
+        return Folder(self, HrGetOneProp(root, PR_ADDITIONAL_REN_ENTRYIDS).Value[4])
 
     @property
     def calendar(self):
