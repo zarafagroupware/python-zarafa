@@ -39,6 +39,8 @@ def main():
         for folder in user.store.folders(recurse=True):
             print 'Folder:', folder.name
             for item in folder.items():
+                if not item.received:
+                    continue
                 if item.received.date() < datetime.date.today()-datetime.timedelta(days=int(args[0])):
                     if options.verbose:
                         print 'Email:', item.subject, 'Received:', getMailAge(item.prop(PR_MESSAGE_DELIVERY_TIME).mapi_value.unixtime)
