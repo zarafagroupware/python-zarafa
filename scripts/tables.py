@@ -1,13 +1,13 @@
 from MAPI.Util import *
-
 import zarafa
-z = zarafa.Server()
 
-for table in z.tables():
+server = zarafa.Server()
+
+for table in server.tables():
     print table
     print table.csv(delimiter=';')
 
-for item in z.user('user1').store.inbox:
+for item in server.user('user1').store.inbox:
     print item
     for table in item.tables():
         print table
