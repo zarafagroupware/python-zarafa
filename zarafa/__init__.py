@@ -95,11 +95,19 @@ except NameError:
         if K.startswith('PR_'):
             REV_TAG[V] = K
 
+# XXX clean up and improve for common guids/namepaces
 PSETID_Archive = DEFINE_GUID(0x72e98ebc, 0x57d2, 0x4ab5, 0xb0, 0xaa, 0xd5, 0x0a, 0x7b, 0x53, 0x1c, 0xb9)
 NAMED_PROPS_ARCHIVER = [MAPINAMEID(PSETID_Archive, MNID_STRING, u'store-entryids'), MAPINAMEID(PSETID_Archive, MNID_STRING, u'item-entryids'), MAPINAMEID(PSETID_Archive, MNID_STRING, u'stubbed'),]
 
 GUID_NAMESPACE = {PSETID_Archive: 'archive'}
 NAMESPACE_GUID = {'archive': PSETID_Archive}
+
+# XXX copied from common/ECDefs.h - can we SWIG this stuff?
+def OBJECTCLASS(__type, __class):
+    return (__type << 16) | (__class & 0xFFFF)
+
+OBJECTTYPE_MAILUSER = 1
+ACTIVE_USER = OBJECTCLASS(OBJECTTYPE_MAILUSER, 1)
 
 def _prop(self, mapiobj, proptag):
     if isinstance(proptag, (int, long)):
@@ -674,11 +682,11 @@ class Store(object):
         return Folder(self, self.mapiobj.GetReceiveFolder('IPM', 0)[0])
 
     @property
-    def spam(self):
-        """ :class:`Folder` designated as spam """
+    def junk(self):
+        """ :class:`Folder` designated as junk """
         
         root = self.mapiobj.OpenEntry(None, None, 0)
-        # PR_ADDITIONAL_REN_ENTRYIDS is a multi-value property, 4th entry is the spam folder
+        # PR_ADDITIONAL_REN_ENTRYIDS is a multi-value property, 4th entry is the junk folder
         return Folder(self, HrGetOneProp(root, PR_ADDITIONAL_REN_ENTRYIDS).Value[4])
 
     @property
@@ -1385,6 +1393,10 @@ class User(object):
         return Store(self.server, arch_store) # XXX server?
 
     @property
+    def active(self):
+        return self._ecuser.Class == ACTIVE_USER
+
+    @property
     def home_server(self):
         return self._ecuser.Servername
 
@@ -1625,7 +1637,7 @@ def logger(service, options=None, stdout=False, config=None, name=''):
     logger.setLevel(log_level)
     return logger
 
-def parser(options='cmskpu'):
+def parser(options='cmskpuv'):
     """ 
 Return OptionParser instance from the standard ``optparse`` module, containing common zarafa command-line options
 
@@ -1647,7 +1659,9 @@ Available options:
 
 -F, --foreground: Run service in foreground
 
--m, --modify: Database may be changed (opposite of "dry-run")
+-m, --modify: Depending on program, enable database modification (python-zarafa does not check this!)
+
+-v, --verbose: Depending on program, enable verbose output (python-zarafa does not check this!)
     
 """
 
@@ -1659,7 +1673,8 @@ Available options:
     if 'u' in options: parser.add_option('-u', '--user', dest='users', action='append', default=[], help='Run program for specific user(s)', metavar='USER')
     if 'F' in options: parser.add_option('-F', '--foreground', dest='foreground', action='store_true', help='Run program in foreground')
     if 'f' in options: parser.add_option('-f', '--folder', dest='folders', action='append', default=[], help='Run program for specific folder(s)', metavar='FOLDER')
-    if 'm' in options: parser.add_option('-m', '--modify', dest='modify', action='store_true', help='Actually modify database')
+    if 'm' in options: parser.add_option('-m', '--modify', dest='modify', action='store_true', help='Depending on program, enable database modification')
+    if 'v' in options: parser.add_option('-v', '--verbose', dest='verbose', action='store_true', help='Depending on program, enable verbose output')
     return parser
 
 @contextlib.contextmanager # XXX it logs errors, that's all you need to know :-)
