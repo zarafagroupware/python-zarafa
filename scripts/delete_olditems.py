@@ -36,7 +36,7 @@ def main():
 
     for user in zarafa.Server(options=options).users(parse=True):
         print 'Running for user:', user.name
-        for folder in user.store.folders(recurse=True):
+        for folder in user.store.folders(parse=True):
             print 'Folder:', folder.name
             for item in folder.items():
                 if not item.received:
