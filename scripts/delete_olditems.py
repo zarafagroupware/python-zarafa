@@ -7,10 +7,12 @@ import datetime
 import time
 import sys
 
+
 def opt_args():
     parser = zarafa.parser('skpcufm')
-    parser.add_option('-v','--verbose', dest='verbose', action='store_true', help='enable verbose mode')
+    parser.add_option('-v', '--verbose', dest='verbose', action='store_true', help='enable verbose mode')
     return parser.parse_args()
+
 
 def getMailAge(timestamp):
     messagetime = datetime.datetime.fromtimestamp(timestamp)
@@ -19,10 +21,11 @@ def getMailAge(timestamp):
     days = tdiff.days
     minutes, seconds = divmod(tdiff.seconds, 60)
     hours, minutes = divmod(minutes, 60)
-    remdays = '{0} days '.format(days) if days>0 else ''
-    remhours = '{0} hours '.format(hours) if hours>0 else ''
+    remdays = '{0} days '.format(days) if days > 0 else ''
+    remhours = '{0} hours '.format(hours) if hours > 0 else ''
     mailage = '%s%s%s minutes' % (remdays, remhours, minutes)
     return mailage
+
 
 def main():
     options, args = opt_args()
@@ -36,14 +39,15 @@ def main():
 
     for user in zarafa.Server(options=options).users(parse=True):
         print 'Running for user:', user.name
-        for folder in user.store.folders(recurse=True):
+        for folder in user.store.folders(parse=True):
             print 'Folder:', folder.name
             for item in folder.items():
                 if not item.received:
                     continue
                 if item.received.date() < datetime.date.today()-datetime.timedelta(days=int(args[0])):
                     if options.verbose:
-                        print 'Item:', item.subject, 'Received:', getMailAge(item.prop(PR_MESSAGE_DELIVERY_TIME).mapi_value.unixtime)
+                        print 'Item:', item.subject, 'Received:',
+                        getMailAge(item.prop(PR_MESSAGE_DELIVERY_TIME).mapi_value.unixtime)
                     else:
                         print 'Item:', item.subject
                 if options.modify:
