@@ -373,7 +373,6 @@ Looks at command-line to see if another server address or other related options 
         self.auth_pass = getattr(self.options, 'auth_pass', None) or ''
         while True:
             try:
-                print self.auth_user
                 self.mapisession = OpenECSession(self.auth_user, self.auth_pass, self.server_socket, sslkey_file=self.sslkey_file, sslkey_pass=self.sslkey_pass)
                 break
             except MAPIErrorNetworkError:
