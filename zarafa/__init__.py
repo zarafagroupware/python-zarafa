@@ -369,8 +369,8 @@ Looks at command-line to see if another server address or other related options 
         self.sslkey_pass = sslkey_pass or getattr(self.options, 'sslkey_pass', None) or self.sslkey_pass
 
         # make actual connection. in case of service, wait until this succeeds.
-        self.auth_user = getattr(self.options, 'auth_user', None) or 'SYSTEM' # XXX override with args
-        self.auth_pass = getattr(self.options, 'auth_pass', None) or ''
+        self.auth_user = self.options.auth_user or 'SYSTEM' # XXX override with args
+        self.auth_pass = self.options.auth_pass or ''
         while True:
             try:
                 self.mapisession = OpenECSession(self.auth_user, self.auth_pass, self.server_socket, sslkey_file=self.sslkey_file, sslkey_pass=self.sslkey_pass)
