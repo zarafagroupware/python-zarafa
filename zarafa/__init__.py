@@ -459,6 +459,8 @@ Looks at command-line to see if another server address or other related options 
                 if system or username != u'SYSTEM':
                     if remote or user._ecuser.Servername in (self.name, ''):
                         yield user
+                    elif not remote and user.local: # XXX check if GetUserList can filter local/remote users
+                        yield user
 
     def create_user(self, name, password=None, company=None, fullname=None, create_store=True):
         name = unicode(name)
