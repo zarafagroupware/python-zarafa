@@ -21,7 +21,7 @@ def main():
             user = z.user(username)
             for item in user.store.junk.items():
                 if autolearn:
-		    if (not item.header('x-spam-flag')) or ( item.header('x-spam-flag') == 'NO'):
+                    if (not item.header('x-spam-flag')) or (item.header('x-spam-flag') == 'NO'):
                         print "%s : untagged spam [Subject: %s]" % (user.name, item.subject)
                         try:
                             p = subprocess.Popen(spamcommand, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
