@@ -20,10 +20,13 @@ List folder sizes for a specific or all users on a server.
 
 monitor.py
 =====
+WIP, re-implementation of zarafa-monitor in Python.
 
 tables.py
 =====
+MAPI table examples.
 
 zarafa-stats.py
 =====
 
+Re-implementation of zarafa-stats in Python but without --curses.

@@ -338,7 +338,7 @@ Looks at command-line to see if another server address or other related options 
         # get cmd-line options
         self.options = options
         if not self.options:
-            self.options, args = parser('skpcumfF').parse_args()
+            self.options, args = parser().parse_args()
 
         # determine config file
         if config:
@@ -356,9 +356,10 @@ Looks at command-line to see if another server address or other related options 
 
         # get defaults
         if config:
-            self.server_socket = config.get('server_socket')
-            self.sslkey_file = config.get('sslkey_file') 
-            self.sslkey_pass = config.get('sslkey_pass')
+            if not (server_socket or getattr(self.options, 'server_socket')): # XXX generalize
+                self.server_socket = config.get('server_socket')
+                self.sslkey_file = config.get('sslkey_file') 
+                self.sslkey_pass = config.get('sslkey_pass')
         else:
             self.server_socket = os.getenv('ZARAFA_SOCKET', 'file:///var/run/zarafa')
 
@@ -368,9 +369,11 @@ Looks at command-line to see if another server address or other related options 
         self.sslkey_pass = sslkey_pass or getattr(self.options, 'sslkey_pass', None) or self.sslkey_pass
 
         # make actual connection. in case of service, wait until this succeeds.
+        self.auth_user = getattr(self.options, 'auth_user', None) or 'SYSTEM' # XXX override with args
+        self.auth_pass = getattr(self.options, 'auth_pass', None) or ''
         while True:
             try:
-                self.mapisession = OpenECSession('SYSTEM', '', self.server_socket, sslkey_file=self.sslkey_file, sslkey_pass=self.sslkey_pass)
+                self.mapisession = OpenECSession(self.auth_user, self.auth_pass, self.server_socket, sslkey_file=self.sslkey_file, sslkey_pass=self.sslkey_pass)
                 break
             except MAPIErrorNetworkError:
                 if service:
@@ -455,6 +458,8 @@ Looks at command-line to see if another server address or other related options 
                 user = User(self, username)
                 if system or username != u'SYSTEM':
                     if remote or user._ecuser.Servername in (self.name, ''):
+                        yield user
+                    elif not remote and user.local: # XXX check if GetUserList can filter local/remote users
                         yield user
 
     def create_user(self, name, password=None, company=None, fullname=None, create_store=True):
@@ -695,6 +700,12 @@ class Store(object):
 
         root = self.mapiobj.OpenEntry(None, None, 0)
         return Folder(self, HrGetOneProp(root, PR_IPM_APPOINTMENT_ENTRYID).Value)
+
+    def outbox(self):
+        """ :class:`Folder` designated as calendar """
+
+        root = self.mapiobj.OpenEntry(None, None, 0) # XX: cache root?
+        return Folder(self, HrGetOneProp(root, PR_IPM_OUTBOX_ENTRYID).Value)
 
     @property
     def contacts(self):
@@ -1027,7 +1038,8 @@ class Item(object):
                 ids = self.mapiobj.GetIDsFromNames(NAMED_PROPS_ARCHIVER, 0)
                 PROP_STORE_ENTRYIDS = CHANGE_PROP_TYPE(ids[0], PT_MV_BINARY)
                 try:
-                    arch_storeid = HrGetOneProp(self.mapiobj, PROP_STORE_ENTRYIDS).Value[0] # XXX XXX multiple archives?!?!
+                    # support for multiple archives was a mistake, and is not and _should not_ be used. so we just pick nr 0.
+                    arch_storeid = HrGetOneProp(self.mapiobj, PROP_STORE_ENTRYIDS).Value[0]
                     arch_server = arch_storeid[arch_storeid.find('pseudo://')+9:-1]
                     arch_session = self.server._archive_session(arch_server)
                     if arch_session is None: # XXX first connection failed, no need to report about this multiple times
@@ -1191,10 +1203,10 @@ class Body:
             if len(blup) == 0:
                 break
             data.append(blup)
-        return ''.join(data).decode('utf-32le')
+        return ''.join(data).decode('utf-32le') # XXX under windows this be utf-16le or something
 
     @property
-    def html(self):
+    def html(self): # XXX decode using PR_INTERNET_CPID
         """ HTML representation (possibly from archive server), in original encoding """
 
         mapiitem = self.mapiitem._arch_item
@@ -1237,7 +1249,7 @@ class Address:
             try:
                 mapiuser = self.server.mapisession.OpenEntry(self.entryid, None, 0)
                 return self.server.user(HrGetOneProp(mapiuser, PR_ACCOUNT).Value).email
-            except zarafa.ZarafaException:
+            except ZarafaException:
                 return None # XXX 'Support Delft'??
         else:
             return self._email
@@ -1637,44 +1649,59 @@ def logger(service, options=None, stdout=False, config=None, name=''):
     logger.setLevel(log_level)
     return logger
 
-def parser(options='cmskpuv'):
+def parser(options='cskpUPufmvV'):
     """ 
 Return OptionParser instance from the standard ``optparse`` module, containing common zarafa command-line options
 
-:param options: string containing a char for each desired option, default "cmskpu" (see below)
+:param options: string containing a char for each desired option, default "cskpUPufmvV"
 
 Available options:
 
--c, --config: path to configuration file 
+-c, --config: Path to configuration file 
+
+-s, --server: Zarafa server socket address
 
 -k, --sslkey-file: SSL key file
 
 -p, --sslkey-password: SSL key password
 
--s, --server: address of the Zarafa server
+-U, --auth-user: Login as user
 
--u, --user: Specify one or more users
+-P, --auth-pass: Login with password
 
--f, --folder: Specify one or more folders
+-u, --user: Run program for specific user(s)
+
+-f, --folder: Run program for specific folder(s)
 
 -F, --foreground: Run service in foreground
 
 -m, --modify: Depending on program, enable database modification (python-zarafa does not check this!)
 
 -v, --verbose: Depending on program, enable verbose output (python-zarafa does not check this!)
+
+-V, --version: Show program version and exit
     
 """
 
     parser = optparse.OptionParser()
-    if 's' in options: parser.add_option('-s', '--server', dest='server_socket', help='Connect to server HOST', metavar='HOST')
-    if 'k' in options: parser.add_option('-k', '--sslkey-file', dest='sslkey_file', help='SSL key file')
-    if 'p' in options: parser.add_option('-p', '--sslkey-pass', dest='sslkey_pass', help='SSL key password')
+
     if 'c' in options: parser.add_option('-c', '--config', dest='config_file', help='Load settings from FILE', metavar='FILE')
+
+    if 's' in options: parser.add_option('-s', '--server', dest='server_socket', help='Connect to server HOST', metavar='HOST')
+    if 'k' in options: parser.add_option('-k', '--ssl-key', dest='sslkey_file', help='SSL key file', metavar='FILE')
+    if 'p' in options: parser.add_option('-p', '--ssl-pass', dest='sslkey_pass', help='SSL key password', metavar='PASS')
+    if 'U' in options: parser.add_option('-U', '--auth-user', dest='auth_user', help='Login as user', metavar='USER')
+    if 'P' in options: parser.add_option('-P', '--auth-pass', dest='auth_pass', help='Login with password', metavar='PASS')
+
     if 'u' in options: parser.add_option('-u', '--user', dest='users', action='append', default=[], help='Run program for specific user(s)', metavar='USER')
-    if 'F' in options: parser.add_option('-F', '--foreground', dest='foreground', action='store_true', help='Run program in foreground')
     if 'f' in options: parser.add_option('-f', '--folder', dest='folders', action='append', default=[], help='Run program for specific folder(s)', metavar='FOLDER')
+
+    if 'F' in options: parser.add_option('-F', '--foreground', dest='foreground', action='store_true', help='Run program in foreground')
+
     if 'm' in options: parser.add_option('-m', '--modify', dest='modify', action='store_true', help='Depending on program, enable database modification')
     if 'v' in options: parser.add_option('-v', '--verbose', dest='verbose', action='store_true', help='Depending on program, enable verbose output')
+    if 'V' in options: parser.add_option('-V', '--version', dest='version', action='store_true', help='Show program version')
+
     return parser
 
 @contextlib.contextmanager # XXX it logs errors, that's all you need to know :-)
@@ -1979,7 +2006,7 @@ Encapsulates everything to create a simple Zarafa service, such as:
         self.name = name
         self.__dict__.update(kwargs)
         if not options:
-            options, args = parser('skpcumfF').parse_args() # XXX store args?
+            options, args = parser('cskpUPufmvVF').parse_args() # XXX store args?
         self.options = options
         self.name = name
         config2 = CONFIG.copy()
