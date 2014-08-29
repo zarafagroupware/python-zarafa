@@ -436,19 +436,17 @@ Looks at command-line to see if another server address or other related options 
         except ZarafaException:
             pass
 
-    def users(self, remote=True, system=False, parse=False):
+    def users(self, remote=True, system=False, parse=True):
         """ Return all :class:`users <User>` on server 
 
             :param remote: include users on remote server nodes
             :param system: include system users
-            :param parse: check command-line for ``--user`` arguments and only include these
         """
 
-        if parse:
-            if self.options.users:
-                for username in self.options.users:
-                    yield User(self, username)
-                return
+        if parse and getattr(self.options, 'users', None):
+            for username in self.options.users:
+                yield User(self, username)
+            return
         try:
             for name in self._companylist():
                 for user in Company(self, name).users(): # XXX remote/system check
@@ -459,6 +457,7 @@ Looks at command-line to see if another server address or other related options 
                 if system or username != u'SYSTEM':
                     if remote or user._ecuser.Servername in (self.name, ''):
                         yield user
+                    # XXX following two lines not necessary with python-mapi from trunk
                     elif not remote and user.local: # XXX check if GetUserList can filter local/remote users
                         yield user
 
@@ -738,18 +737,32 @@ class Store(object):
         else:
             return matches[0]
 
-    def folders(self, recurse=True, system=False, parse=False):
+    def folders(self, recurse=True, system=False, mail=False, parse=True): # XXX mail flag semantic difference?
         """ Return all :class:`folders <Folder>` in store
 
         :param recurse: include all sub-folders
         :param system: include system folders
-        :param parse: check command-line for ``--folder`` arguments and only include these
+        :param mail: only include mail folders
         
         """
 
+        # filter function to determine if we return a folder or not
         filter_names = None
-        if parse:
+        if parse and getattr(self.server.options, 'folders', None):
             filter_names = self.server.options.folders
+
+        def check_folder(folder):
+            if filter_names and folder.name not in filter_names:
+                return False
+            if mail:
+                try:
+                    if folder.prop(PR_CONTAINER_CLASS) != 'IPF.Note':
+                        return False
+                except MAPIErrorNotFound:
+                    pass
+            return True
+
+        # determine root folder
         if system:
             root = self.mapiobj.OpenEntry(None, None, 0)
         else:
@@ -761,22 +774,20 @@ class Store(object):
             except MAPIErrorNotFound: # SYSTEM store
                 return
             root = self.mapiobj.OpenEntry(ipmsubtreeid, IID_IMAPIFolder, MAPI_DEFERRED_ERRORS)
+
+        # loop over and filter all subfolders 
         table = root.GetHierarchyTable(0)
         table.SetColumns([PR_ENTRYID], TBL_BATCH)
         table.Restrict(SPropertyRestriction(RELOP_EQ, PR_FOLDER_TYPE, SPropValue(PR_FOLDER_TYPE, FOLDER_GENERIC)), TBL_BATCH)
-        while True:
-            rows = table.QueryRows(50, 0)
-            if len(rows) == 0:
-                break
-            for row in rows:
-                folder = Folder(self, row[0].Value)
-                folder.depth = 0
-                if not filter_names or folder.name in filter_names:
-                    yield folder
-                if recurse:
-                    for subfolder in folder.folders(depth=1):
-                        if not filter_names or subfolder.name in filter_names:
-                            yield subfolder
+        for row in table.QueryRows(-1, 0):
+            folder = Folder(self, row[0].Value)
+            folder.depth = 0
+            if check_folder(folder):
+                yield folder
+            if recurse:
+                for subfolder in folder.folders(depth=1):
+                    if check_folder(subfolder):
+                        yield subfolder
 
     def item(self, entryid):
         """ Return :class:`Item` with given entryid; raise exception of not found """ # XXX better exception?
@@ -1018,8 +1029,7 @@ class Item(object):
     def __init__(self, folder=None, eml=None, mail=None):
         # TODO: self.folder fix this!
         self.emlfile = eml
-        if folder is not None:
-            self.folder = folder
+        self._folder = folder
 
         # if eml is given, set Item
         if eml is not None and self.folder is not None:
@@ -1080,11 +1090,8 @@ class Item(object):
 
     @property
     def body(self):
-        """ Item :class:`body <Body>` or *None* if no body """
-        try:
-            return Body(self)
-        except MAPIErrorNotFound:
-            pass
+        """ Item :class:`body <Body>` """
+        return Body(self) # XXX return None if no body..?
 
     @property
     def received(self):
@@ -1105,6 +1112,16 @@ class Item(object):
             return HrGetOneProp(self.mapiobj, PROP_STUBBED).Value # False means destubbed
         except MAPIErrorNotFound:
             return False
+
+    @property
+    def folder(self):
+        """ Parent :class:`Folder` of an item """
+        if self._folder:
+            return self._folder
+        try:
+            return Folder(self.store, HrGetOneProp(self.mapiobj, PR_PARENT_ENTRYID).Value)
+        except MAPIErrorNotFound:
+            pass
 
     def prop(self, proptag):
         return _prop(self, self.mapiobj, proptag)
@@ -1195,29 +1212,35 @@ class Body:
     def text(self):
         """ Plaintext representation (possibly from archive server) """
 
-        mapiitem = self.mapiitem._arch_item # XXX server already goes 'underwater'.. check details
-        stream = mapiitem.OpenProperty(PR_BODY_W, IID_IStream, 0, 0)
-        data = []
-        while True:
-            blup = stream.Read(0xFFFFF) # 1 MB
-            if len(blup) == 0:
-                break
-            data.append(blup)
-        return ''.join(data).decode('utf-32le') # XXX under windows this be utf-16le or something
+        try:
+            mapiitem = self.mapiitem._arch_item # XXX server already goes 'underwater'.. check details
+            stream = mapiitem.OpenProperty(PR_BODY_W, IID_IStream, 0, 0)
+            data = []
+            while True:
+                blup = stream.Read(0xFFFFF) # 1 MB
+                if len(blup) == 0:
+                    break
+                data.append(blup)
+            return ''.join(data).decode('utf-32le') # XXX under windows this be utf-16le or something
+        except MAPIErrorNotFound:
+            pass
 
     @property
     def html(self): # XXX decode using PR_INTERNET_CPID
         """ HTML representation (possibly from archive server), in original encoding """
 
-        mapiitem = self.mapiitem._arch_item
-        stream = mapiitem.OpenProperty(PR_HTML, IID_IStream, 0, 0)
-        data = []
-        while True:
-            blup = stream.Read(0xFFFFF) # 1 MB
-            if len(blup) == 0:
-                break
-            data.append(blup)
-        return ''.join(data) # XXX do we need to do something about encodings? 
+        try:
+            mapiitem = self.mapiitem._arch_item
+            stream = mapiitem.OpenProperty(PR_HTML, IID_IStream, 0, 0)
+            data = []
+            while True:
+                blup = stream.Read(0xFFFFF) # 1 MB
+                if len(blup) == 0:
+                    break
+                data.append(blup)
+            return ''.join(data) # XXX do we need to do something about encodings? 
+        except MAPIErrorNotFound:
+            pass
 
     def __unicode__(self):
         return u'Body()'
@@ -1394,7 +1417,8 @@ class User(object):
         ids = mapistore.GetIDsFromNames(NAMED_PROPS_ARCHIVER, 0) # XXX merge namedprops stuff
         PROP_STORE_ENTRYIDS = CHANGE_PROP_TYPE(ids[0], PT_MV_BINARY)
         try:
-            arch_storeid = HrGetOneProp(mapistore, PROP_STORE_ENTRYIDS).Value[0] # XXX XXX multiple archives?!?!
+            # support for multiple archives was a mistake, and is not and _should not_ be used. so we just pick nr 0.
+            arch_storeid = HrGetOneProp(mapistore, PROP_STORE_ENTRYIDS).Value[0]
         except MAPIErrorNotFound:
             return
         arch_server = arch_storeid[arch_storeid.find('pseudo://')+9:-1]
@@ -1594,7 +1618,7 @@ def daemonize(func, options=None, foreground=False, args=[], log=None, config=No
                         raise
                     # errno.ENOENT indicates that no process with pid=oldpid exists, which is ok
                     pidfile.break_lock()
-#                else: # XXX can we do this in general?
+#                else: # XXX can we do this in general? are there libraries to avoid having to deal with this? daemonrunner? 
 #                    # A process exists with pid=oldpid, check if it's a zarafa-ws instance.
 #                    # sys.argv[0] contains the script name, which matches cmdline[1]. But once compiled
 #                    # sys.argv[0] is probably the executable name, which will match cmdline[0].
@@ -1649,7 +1673,7 @@ def logger(service, options=None, stdout=False, config=None, name=''):
     logger.setLevel(log_level)
     return logger
 
-def parser(options='cskpUPufmvV'):
+def parser(options='cskpUPufmv'):
     """ 
 Return OptionParser instance from the standard ``optparse`` module, containing common zarafa command-line options
 
@@ -1704,7 +1728,7 @@ Available options:
 
     return parser
 
-@contextlib.contextmanager # XXX it logs errors, that's all you need to know :-)
+@contextlib.contextmanager # it logs errors, that's all you need to know :-)
 def log_exc(log):
     """
 Context-manager to log any exception in sub-block to given logger instance
