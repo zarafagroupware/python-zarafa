@@ -123,8 +123,7 @@ def _props(mapiobj, namespace=None):
     result = []
     proptags = mapiobj.GetPropList(MAPI_UNICODE)
     props = mapiobj.GetProps(proptags, MAPI_UNICODE)
-    for prop in props:
-        result.append((prop.ulPropTag, prop.Value, PROP_TYPE(prop.ulPropTag)))
+    result = [(prop.ulPropTag, prop.Value, PROP_TYPE(prop.ulPropTag)) for prop in props]
     result.sort()
     props1 =[Property(mapiobj, b, c, d) for (b, c, d) in result]
     return [p for p in props1 if not namespace or p.namespace == namespace]
@@ -325,13 +324,15 @@ Looks at command-line to see if another server address or other related options 
 :param sslkey_file: similar to 'sslkey_file' option in config file
 :param sslkey_pass: similar to 'sslkey_pass' option in config file
 :param config: path of configuration file containing common server options, for example ``/etc/zarafa/admin.cfg``
+:param auth_user: username to user for user authentication
+:param auth_pass: password to use for user authentication
 :param log: logger object to receive useful (debug) information
 :param options: OptionParser instance to get settings from (see :func:`parser`)
 
     
 """
 
-    def __init__(self, options=None, config=None, sslkey_file=None, sslkey_pass=None, server_socket=None, log=None, service=None):
+    def __init__(self, options=None, config=None, sslkey_file=None, sslkey_pass=None, server_socket=None, auth_user=None, auth_pass=None, log=None, service=None):
         self.log = log
         self.server_socket = self.sslkey_file = self.sslkey_pass = None
 
@@ -369,8 +370,8 @@ Looks at command-line to see if another server address or other related options 
         self.sslkey_pass = sslkey_pass or getattr(self.options, 'sslkey_pass', None) or self.sslkey_pass
 
         # make actual connection. in case of service, wait until this succeeds.
-        self.auth_user = getattr(self.options, 'auth_user', None) or 'SYSTEM' # XXX override with args
-        self.auth_pass = getattr(self.options, 'auth_pass', None) or ''
+        self.auth_user = auth_user or getattr(self.options, 'auth_user', None) or 'SYSTEM' # XXX override with args
+        self.auth_pass = auth_pass or getattr(self.options, 'auth_pass', None) or ''
         while True:
             try:
                 self.mapisession = OpenECSession(self.auth_user, self.auth_pass, self.server_socket, sslkey_file=self.sslkey_file, sslkey_pass=self.sslkey_pass)
