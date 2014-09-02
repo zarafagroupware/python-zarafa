@@ -43,6 +43,7 @@ Main classes:
 
 """
 
+
 import contextlib
 import csv
 try:
@@ -675,12 +676,19 @@ class Store(object):
         self.server = server
         self.mapiobj = mapistore
         self.public = public
+        self._root = self.mapiobj.OpenEntry(None, None, 0)
 
     @property
     def guid(self):
         """ Store GUID """
 
         return bin2hex(HrGetOneProp(self.mapiobj, PR_STORE_RECORD_KEY).Value)
+
+    @property
+    def root(self): #TODO: make this return a zarafa.Folder
+        """ :class:`IMAPIFolder` designated as userstore root """
+
+        return self._root
 
     @property
     def inbox(self):
@@ -691,30 +699,57 @@ class Store(object):
     @property
     def junk(self):
         """ :class:`Folder` designated as junk """
-        
-        root = self.mapiobj.OpenEntry(None, None, 0)
+
         # PR_ADDITIONAL_REN_ENTRYIDS is a multi-value property, 4th entry is the junk folder
-        return Folder(self, HrGetOneProp(root, PR_ADDITIONAL_REN_ENTRYIDS).Value[4])
+        return Folder(self, HrGetOneProp(self._root, PR_ADDITIONAL_REN_ENTRYIDS).Value[4])
 
     @property
     def calendar(self):
         """ :class:`Folder` designated as calendar """
 
-        root = self.mapiobj.OpenEntry(None, None, 0)
-        return Folder(self, HrGetOneProp(root, PR_IPM_APPOINTMENT_ENTRYID).Value)
+        return Folder(self, HrGetOneProp(self._root, PR_IPM_APPOINTMENT_ENTRYID).Value)
 
+    @property
     def outbox(self):
-        """ :class:`Folder` designated as calendar """
+        """ :class:`Folder` designated as outbox """
 
-        root = self.mapiobj.OpenEntry(None, None, 0) # XX: cache root?
-        return Folder(self, HrGetOneProp(root, PR_IPM_OUTBOX_ENTRYID).Value)
+        return Folder(self, HrGetOneProp(self.mapiobj, PR_IPM_OUTBOX_ENTRYID).Value)
 
     @property
     def contacts(self):
         """ :class:`Folder` designated as contacts """
 
-        root = self.mapiobj.OpenEntry(None, None, 0)
-        return Folder(self, HrGetOneProp(root, PR_IPM_CONTACT_ENTRYID).Value)
+        return Folder(self, HrGetOneProp(self._root, PR_IPM_CONTACT_ENTRYID).Value)
+
+    @property
+    def drafts(self):
+        """ :class:`Folder` designated as drafts """
+
+        return Folder(self, HrGetOneProp(self._root, PR_IPM_DRAFTS_ENTRYID).Value)
+
+    @property
+    def wastebasket(self):
+        """ :class:`Folder` designated as wastebasket """
+
+        return Folder(self, HrGetOneProp(self.mapiobj, PR_IPM_WASTEBASKET_ENTRYID).Value)
+
+    @property
+    def sentmail(self):
+        """ :class:`Folder` designated as sentmail """
+
+        return Folder(self, HrGetOneProp(self.mapiobj, PR_IPM_SENTMAIL_ENTRYID).Value)
+
+    @property
+    def tasks(self):
+        """ :class:`Folder` designated as tasks """
+
+        return Folder(self, HrGetOneProp(self.mapiobj, PR_IPM_TASK_ENTRYID).Value)
+
+    @property
+    def subtree(self):
+        """ :class:`Folder` designated as IPM.Subtree """
+        # TODO: doesn't work, needs to be swigged
+        return Folder(self, HrGetOneProp(self.mapiobj, PR_IPM_SUBTREE_ENTRYID).Value)
 
     @property
     def user(self):
