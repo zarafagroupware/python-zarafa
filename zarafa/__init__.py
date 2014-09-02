@@ -356,13 +356,15 @@ Looks at command-line to see if another server address or other related options 
                 pass
 
         # get defaults
-        if config:
+        if os.getenv('ZARAFA_SOCKET'): # env variable used in testset
+            self.server_socket = os.getenv('ZARAFA_SOCKET')
+        elif config:
             if not (server_socket or getattr(self.options, 'server_socket')): # XXX generalize
                 self.server_socket = config.get('server_socket')
                 self.sslkey_file = config.get('sslkey_file') 
                 self.sslkey_pass = config.get('sslkey_pass')
         else:
-            self.server_socket = os.getenv('ZARAFA_SOCKET', 'file:///var/run/zarafa')
+            self.server_socket = 'file:///var/run/zarafa'
 
         # override with explicit or command-line args
         self.server_socket = server_socket or getattr(self.options, 'server_socket', None) or self.server_socket
