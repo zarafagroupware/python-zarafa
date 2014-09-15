@@ -1,12 +1,14 @@
+#!/usr/bin/env python
 import zarafa
 import matplotlib.pyplot as plt
 
 def opt_args():
     parser = zarafa.parser('skpc')
     parser.add_option('--store', dest='store', action='store_true',  help='Plots a graph with store sizes of users')
-    parser.add_option('--folders', dest='folders', action='store_true',  help='Plots a graph with the number of folders per user')
+    parser.add_option('--folders', dest='plotfolders', action='store_true',  help='Plots a graph with the number of folders per user')
     parser.add_option('--items', dest='items', action='store_true',  help='Plots a graph with the number of items per user')
     parser.add_option('--save', dest='save', action='store',  help='Save plot to file (png)')
+    parser.add_option('--sort', dest='sort', action='store_true',  help='Sort the graph')
     return parser.parse_args()
 
 def b2m(bytes):
@@ -20,25 +22,33 @@ def main():
     fig, ax = plt.subplots() 
 
     if options.store:
-        data = [b2m(user.store.size) for user in users]
+        data = {user.name: b2m(user.store.size) for user in users}
         plt.ylabel('Store size (Mb)')
-    elif options.folders:
-        data = [len(list(user.store.folders())) for user in users]
-        plt.ylabel('Folders)')
+    elif options.plotfolders:
+        # TODO: add mail only flag?
+        data = {user.name: len(list(user.store.folders())) for user in users}
+        plt.ylabel('Folders')
     elif options.items:
-        # TODO: does a MAPI folder have an item that has the amount of items in it? since this is _very_ inefficient
-        data = []
-        for user in users:
-            data.append(sum([len(list(folder.items())) for folder in user.store.folders()]))
+        data ={user.name: sum(folder.count for folder in user.store.folders()) for user in users}
         plt.ylabel('Items')
     else:
         return
 
-    ax.plot(data)
+    if options.sort:
+        ax.plot(sorted(data.values()))
+        users = sorted(data, key=data.__getitem__)
+
+    else:
+        ax.plot(data.values())
     plt.xlabel('Users')
+
+    # TODO: find a more elegant solution
     labels = [item.get_text() for item in ax.get_xticklabels()]
     for i, user in enumerate(users):
-        labels[i] = user.name
+        if options.sort:
+            labels[i] = user
+        else:
+            labels[i] = user.name
     ax.set_xticklabels(labels)
 
     if options.save:
