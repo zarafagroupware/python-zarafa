@@ -1,3 +1,7 @@
+zarafa-spamhandler
+====
+A description of the zarafa-spamhandler can be found in this [blog post](http://www.zarafa.com/blog/post/2014/08/cool-scripts-and-tools-automated-spam-processing-python-zarafa-and-zarafa-spamhand)
+
 delete\_olditems.py
 =====
 Allows system administrators to delete old emails.  
