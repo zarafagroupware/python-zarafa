@@ -50,8 +50,8 @@ def main():
                         getMailAge(item.prop(PR_MESSAGE_DELIVERY_TIME).mapi_value.unixtime)
                     else:
                         print 'Item:', item.subject
-                if options.modify:
-                    folder.delete([item])
+                    if options.modify:
+                        folder.delete([item])
 
 if __name__ == '__main__':
     main()

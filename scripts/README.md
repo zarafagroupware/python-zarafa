@@ -30,3 +30,8 @@ zarafa-stats.py
 =====
 
 Re-implementation of zarafa-stats in Python but without --curses.
+
+z-plot.py
+====
+
+Simple Python program that shows graphs of user statistics (for example items per user)

@@ -43,6 +43,7 @@ Main classes:
 
 """
 
+
 import contextlib
 import csv
 try:
@@ -123,8 +124,7 @@ def _props(mapiobj, namespace=None):
     result = []
     proptags = mapiobj.GetPropList(MAPI_UNICODE)
     props = mapiobj.GetProps(proptags, MAPI_UNICODE)
-    for prop in props:
-        result.append((prop.ulPropTag, prop.Value, PROP_TYPE(prop.ulPropTag)))
+    result = [(prop.ulPropTag, prop.Value, PROP_TYPE(prop.ulPropTag)) for prop in props]
     result.sort()
     props1 =[Property(mapiobj, b, c, d) for (b, c, d) in result]
     return [p for p in props1 if not namespace or p.namespace == namespace]
@@ -325,13 +325,15 @@ Looks at command-line to see if another server address or other related options 
 :param sslkey_file: similar to 'sslkey_file' option in config file
 :param sslkey_pass: similar to 'sslkey_pass' option in config file
 :param config: path of configuration file containing common server options, for example ``/etc/zarafa/admin.cfg``
+:param auth_user: username to user for user authentication
+:param auth_pass: password to use for user authentication
 :param log: logger object to receive useful (debug) information
 :param options: OptionParser instance to get settings from (see :func:`parser`)
 
     
 """
 
-    def __init__(self, options=None, config=None, sslkey_file=None, sslkey_pass=None, server_socket=None, log=None, service=None):
+    def __init__(self, options=None, config=None, sslkey_file=None, sslkey_pass=None, server_socket=None, auth_user=None, auth_pass=None, log=None, service=None):
         self.log = log
         self.server_socket = self.sslkey_file = self.sslkey_pass = None
 
@@ -355,13 +357,15 @@ Looks at command-line to see if another server address or other related options 
                 pass
 
         # get defaults
-        if config:
+        if os.getenv('ZARAFA_SOCKET'): # env variable used in testset
+            self.server_socket = os.getenv('ZARAFA_SOCKET')
+        elif config:
             if not (server_socket or getattr(self.options, 'server_socket')): # XXX generalize
                 self.server_socket = config.get('server_socket')
                 self.sslkey_file = config.get('sslkey_file') 
                 self.sslkey_pass = config.get('sslkey_pass')
         else:
-            self.server_socket = os.getenv('ZARAFA_SOCKET', 'file:///var/run/zarafa')
+            self.server_socket = 'file:///var/run/zarafa'
 
         # override with explicit or command-line args
         self.server_socket = server_socket or getattr(self.options, 'server_socket', None) or self.server_socket
@@ -369,8 +373,8 @@ Looks at command-line to see if another server address or other related options 
         self.sslkey_pass = sslkey_pass or getattr(self.options, 'sslkey_pass', None) or self.sslkey_pass
 
         # make actual connection. in case of service, wait until this succeeds.
-        self.auth_user = getattr(self.options, 'auth_user', None) or 'SYSTEM' # XXX override with args
-        self.auth_pass = getattr(self.options, 'auth_pass', None) or ''
+        self.auth_user = auth_user or getattr(self.options, 'auth_user', None) or 'SYSTEM' # XXX override with args
+        self.auth_pass = auth_pass or getattr(self.options, 'auth_pass', None) or ''
         while True:
             try:
                 self.mapisession = OpenECSession(self.auth_user, self.auth_pass, self.server_socket, sslkey_file=self.sslkey_file, sslkey_pass=self.sslkey_pass)
@@ -672,12 +676,19 @@ class Store(object):
         self.server = server
         self.mapiobj = mapistore
         self.public = public
+        self._root = self.mapiobj.OpenEntry(None, None, 0)
 
     @property
     def guid(self):
         """ Store GUID """
 
         return bin2hex(HrGetOneProp(self.mapiobj, PR_STORE_RECORD_KEY).Value)
+
+    @property
+    def root(self): #TODO: make this return a zarafa.Folder
+        """ :class:`IMAPIFolder` designated as userstore root """
+
+        return self._root
 
     @property
     def inbox(self):
@@ -688,30 +699,57 @@ class Store(object):
     @property
     def junk(self):
         """ :class:`Folder` designated as junk """
-        
-        root = self.mapiobj.OpenEntry(None, None, 0)
+
         # PR_ADDITIONAL_REN_ENTRYIDS is a multi-value property, 4th entry is the junk folder
-        return Folder(self, HrGetOneProp(root, PR_ADDITIONAL_REN_ENTRYIDS).Value[4])
+        return Folder(self, HrGetOneProp(self._root, PR_ADDITIONAL_REN_ENTRYIDS).Value[4])
 
     @property
     def calendar(self):
         """ :class:`Folder` designated as calendar """
 
-        root = self.mapiobj.OpenEntry(None, None, 0)
-        return Folder(self, HrGetOneProp(root, PR_IPM_APPOINTMENT_ENTRYID).Value)
+        return Folder(self, HrGetOneProp(self._root, PR_IPM_APPOINTMENT_ENTRYID).Value)
 
+    @property
     def outbox(self):
-        """ :class:`Folder` designated as calendar """
+        """ :class:`Folder` designated as outbox """
 
-        root = self.mapiobj.OpenEntry(None, None, 0) # XX: cache root?
-        return Folder(self, HrGetOneProp(root, PR_IPM_OUTBOX_ENTRYID).Value)
+        return Folder(self, HrGetOneProp(self.mapiobj, PR_IPM_OUTBOX_ENTRYID).Value)
 
     @property
     def contacts(self):
         """ :class:`Folder` designated as contacts """
 
-        root = self.mapiobj.OpenEntry(None, None, 0)
-        return Folder(self, HrGetOneProp(root, PR_IPM_CONTACT_ENTRYID).Value)
+        return Folder(self, HrGetOneProp(self._root, PR_IPM_CONTACT_ENTRYID).Value)
+
+    @property
+    def drafts(self):
+        """ :class:`Folder` designated as drafts """
+
+        return Folder(self, HrGetOneProp(self._root, PR_IPM_DRAFTS_ENTRYID).Value)
+
+    @property
+    def wastebasket(self):
+        """ :class:`Folder` designated as wastebasket """
+
+        return Folder(self, HrGetOneProp(self.mapiobj, PR_IPM_WASTEBASKET_ENTRYID).Value)
+
+    @property
+    def sentmail(self):
+        """ :class:`Folder` designated as sentmail """
+
+        return Folder(self, HrGetOneProp(self.mapiobj, PR_IPM_SENTMAIL_ENTRYID).Value)
+
+    @property
+    def tasks(self):
+        """ :class:`Folder` designated as tasks """
+
+        return Folder(self, HrGetOneProp(self.mapiobj, PR_IPM_TASK_ENTRYID).Value)
+
+    @property
+    def subtree(self):
+        """ :class:`Folder` designated as IPM.Subtree """
+        # TODO: doesn't work, needs to be swigged
+        return Folder(self, HrGetOneProp(self.mapiobj, PR_IPM_SUBTREE_ENTRYID).Value)
 
     @property
     def user(self):
