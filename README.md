@@ -17,7 +17,7 @@ To install python-zarafa just simply run the following command.
     python setup.py install
 
 # Documentation
-To generate documentation just simply run the following command.
+To generate documentation just simply run the following command or visit the following [url](http://doc.zarafa.com/trunk/Python_Zarafa/).
 
 ```bash
 cd doc
@@ -31,10 +31,10 @@ firefox _build/singlehtml/index.html
 import zarafa
 
 # connect to server, as specified on command-line (possibly including SSL info) or via defaults
-s = zarafa.Server()
+server = zarafa.Server()
 
 # loop over users on this server, with 'parse' checking the command-line for specific user names
-for user in s.users(parse=True):
+for user in server.users(parse=True):
 # some basic user info
 print user.name, user.email, user.store.guid
 
@@ -49,7 +49,7 @@ for item in user.store.inbox:
 	print attachment.filename, len(attachment.data)
 
 # dive into MAPI if needed
-print user.properties(), user.store.properties()
+print user.props(), user.store.props()
 ```
 
 # Example script listing folders of users
