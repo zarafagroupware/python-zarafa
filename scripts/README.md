@@ -39,3 +39,8 @@ z-plot.py
 ====
 
 Simple Python program that shows graphs of user statistics (for example items per user)
+
+z-barplot.py
+====
+
+Simple Python program that shows a barplot per user (for example items per user)
