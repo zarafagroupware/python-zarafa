@@ -19,7 +19,7 @@ def main():
     users = list(zarafa.Server(options).users())
     data = []
 
-    fig, ax = plt.subplots() 
+    fig, ax = plt.subplots()
 
     if options.store:
         data = {user.name: b2m(user.store.size) for user in users}
