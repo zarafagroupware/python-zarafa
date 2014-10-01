@@ -43,6 +43,9 @@ Main classes:
 
 """
 
+# Python 2.5 doesn't have with
+from __future__ import with_statement
+
 
 import contextlib
 import csv
@@ -253,7 +256,7 @@ Wrapper around MAPI properties
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
 
 class Table(object):
-    """ 
+    """
     Wrapper around MAPI tables
 
 """
@@ -278,11 +281,17 @@ class Table(object):
 
     # TODO: refactor function
     def dict_rows(self):
-        try:
-            for row in self.mapitable.QueryRows(-1, 0):
-                yield dict([(c.ulPropTag, c.Value) for c in row])
-        except MAPIErrorNotFound:
-            pass
+        if self.proptag == PR_EC_STATSTABLE_SYSTEM:
+            try:
+                return { row[0].Value: row[2].Value for row in self.mapitable.QueryRows(-1, 0)}
+            except MAPIErrorNotFound:
+                pass
+
+        else:
+            try:
+                return (dict([(c.ulPropTag, c.Value) for c in row]) for row in self.mapitable.QueryRows(-1, 0))
+            except MAPIErrorNotFound:
+                pass
 
     def data(self, header=False):
         data = [[p.strval() for p in row] for row in self.rows()]
@@ -440,7 +449,7 @@ Looks at command-line to see if another server address or other related options 
         except ZarafaException:
             pass
 
-    def users(self, remote=True, system=False, parse=True):
+    def users(self, remote=False, system=False, parse=True):
         """ Return all :class:`users <User>` on server 
 
             :param remote: include users on remote server nodes
@@ -503,7 +512,7 @@ Looks at command-line to see if another server address or other related options 
         self.sa.GetCompanyList(0) # XXX exception for single-tenant....
         return MAPI.Util.AddressBook.GetCompanyList(self.mapisession, MAPI_UNICODE)
 
-    def companies(self, remote=True): # XXX remote?
+    def companies(self, remote=False): # XXX remote?
         """ Return all :class:`companies <Company>` on server 
 
             :param remote: include companies without users on this server node
@@ -781,7 +790,7 @@ class Store(object):
         :param recurse: include all sub-folders
         :param system: include system folders
         :param mail: only include mail folders
-        
+
         """
 
         # filter function to determine if we return a folder or not
@@ -931,25 +940,39 @@ class Folder(object):
 
     @property
     def count(self, recurse=False): # XXX implement recurse?
-        """ Number of items in folder 
+        """ Number of items in folder
 
         :param recurse: include items in sub-folders
-        
+
         """
 
         return self.mapiobj.GetContentsTable(self.content_flag).GetRowCount(0) # XXX PR_CONTENT_COUNT, PR_ASSOCIATED_CONTENT_COUNT
 
-    def delete(self, items): # XXX associated
-        try:
-            items = list(items)
-        except TypeError:
+    def _get_entryids(self, items):
+        if isinstance(items, (Item, Folder)):
             items = [items]
+        else:
+            items = list(items)
         item_entryids = [item.entryid.decode('hex') for item in items if isinstance(item, Item)]
         folder_entryids = [item.entryid.decode('hex') for item in items if isinstance(item, Folder)]
+        return item_entryids, folder_entryids
+
+    def delete(self, items): # XXX associated
+        item_entryids, folder_entryids = self._get_entryids(items)
         if item_entryids:
             self.mapiobj.DeleteMessages(item_entryids, 0, None, DELETE_HARD_DELETE)
         for entryid in folder_entryids:
             self.mapiobj.DeleteFolder(entryid, 0, None, DEL_FOLDERS|DEL_MESSAGES)
+
+    def copy(self, items, folder, _delete=False):
+        item_entryids, folder_entryids = self._get_entryids(items)
+        if item_entryids:
+            self.mapiobj.CopyMessages(item_entryids, IID_IMAPIFolder, folder.mapiobj, 0, None, (MESSAGE_MOVE if _delete else 0))
+        for entryid in folder_entryids:
+            self.mapiobj.CopyFolder(entryid, IID_IMAPIFolder, folder.mapiobj, None, 0, None, (FOLDER_MOVE if _delete else 0))
+
+    def move(self, items, folder):
+        self.copy(items, folder, _delete=True)
 
     def folder(self, key): # XXX sloowowowww, see also Store.folder
         """ Return :class:`Folder` with given name or entryid; raise exception if not found
@@ -1075,7 +1098,7 @@ class Item(object):
             self.mapiobj = self.folder.mapiobj.CreateMessage(None, 0)
             dopt = inetmapi.delivery_options()
             inetmapi.IMToMAPI(self.folder.store.server.mapisession, self.folder.store.mapiobj, None, self.mapiobj, self.emlfile, dopt)
-            self.mapiobj.SaveChanges(0)
+            self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
         self._architem = None
 
@@ -1211,6 +1234,9 @@ class Item(object):
             sopt.no_recipients_workaround = True
             self.emlfile = inetmapi.IMToINet(self.store.server.mapisession, None, self.mapiobj, sopt)
         return self.emlfile
+
+    def submit(self):
+        self.mapiobj.SubmitMessage(0)
 
     @property
     def sender(self):
@@ -1721,7 +1747,7 @@ Available options:
 
 -c, --config: Path to configuration file 
 
--s, --server: Zarafa server socket address
+-s, --server-socket: Zarafa server socket address
 
 -k, --sslkey-file: SSL key file
 
@@ -1749,7 +1775,7 @@ Available options:
 
     if 'c' in options: parser.add_option('-c', '--config', dest='config_file', help='Load settings from FILE', metavar='FILE')
 
-    if 's' in options: parser.add_option('-s', '--server', dest='server_socket', help='Connect to server HOST', metavar='HOST')
+    if 's' in options: parser.add_option('-s', '--server-socket', dest='server_socket', help='Connect to server SOCKET', metavar='SOCKET')
     if 'k' in options: parser.add_option('-k', '--ssl-key', dest='sslkey_file', help='SSL key file', metavar='FILE')
     if 'p' in options: parser.add_option('-p', '--ssl-pass', dest='sslkey_pass', help='SSL key password', metavar='PASS')
     if 'U' in options: parser.add_option('-U', '--auth-user', dest='auth_user', help='Login as user', metavar='USER')
