@@ -1468,6 +1468,12 @@ class User(object):
         return bin2hex(self._ecuser.UserID)
 
     @property
+    def admin(self):
+        """ Is user admin"""
+
+        return bool(self._ecuser.IsAdmin)
+
+    @property
     def company(self):
         """ :class:`Company` the user belongs to """
 
