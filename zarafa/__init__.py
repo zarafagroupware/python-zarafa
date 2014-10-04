@@ -856,6 +856,16 @@ class Store(object):
         item.mapiobj = libcommon.GetConfigMessage(self.mapiobj, 'Zarafa.Quota')
         return item
 
+    @property
+    def last_logon(self):
+        """ Return :datetime Last logon of a user on this store """
+        return self.prop(PR_LAST_LOGON_TIME).value or None
+
+    @property
+    def last_logoff(self):
+        """ Return :datetime of the last logoff of a user on this store """
+        return self.prop(PR_LAST_LOGOFF_TIME).value or None
+
     def prop(self, proptag):
         return _prop(self, self.mapiobj, proptag)
 
