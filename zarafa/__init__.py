@@ -283,7 +283,7 @@ class Table(object):
     def dict_rows(self):
         if self.proptag == PR_EC_STATSTABLE_SYSTEM:
             try:
-                return { row[0].Value: row[2].Value for row in self.mapitable.QueryRows(-1, 0)}
+                return dict([(row[0].Value, row[2].Value) for row in self.mapitable.QueryRows(-1, 0)])
             except MAPIErrorNotFound:
                 pass
 
