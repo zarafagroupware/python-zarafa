@@ -81,6 +81,7 @@ from MAPI.Util.Generators import *
 import MAPI.Util.AddressBook
 import MAPI.Tags
 import _MAPICore
+import icalmapi
 import inetmapi
 
 try:
@@ -188,6 +189,10 @@ class ZarafaException(Exception):
 class ZarafaConfigException(ZarafaException):
     pass
 
+class ZarafaNotFoundException(ZarafaException):
+    pass
+
+
 class Property(object):
     """ 
 Wrapper around MAPI properties 
@@ -233,7 +238,7 @@ Wrapper around MAPI properties
     def set_value(self, value):
         self._value = value
         self.mapiobj.SetProps([SPropValue(self.proptag, value)])
-        self.mapiobj.SaveChanges(0)
+        self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
     value = property(get_value, set_value)
 
     def strval(self, sep=','):
@@ -267,6 +272,8 @@ class Table(object):
         self.proptag = proptag
         if columns:
             mapitable.SetColumns(columns, 0)
+        else:
+            mapitable.SetColumns(mapitable.QueryColumns(TBL_ALL_COLUMNS), 0) # some columns are hidden by default
 
     @property
     def header(self):
@@ -286,7 +293,6 @@ class Table(object):
                 return dict([(row[0].Value, row[2].Value) for row in self.mapitable.QueryRows(-1, 0)])
             except MAPIErrorNotFound:
                 pass
-
         else:
             try:
                 return (dict([(c.ulPropTag, c.Value) for c in row]) for row in self.mapitable.QueryRows(-1, 0))
@@ -491,7 +497,7 @@ Looks at command-line to see if another server address or other related options 
             self.sa.CreateStore(ECSTORE_TYPE_PRIVATE, user.userid.decode('hex'))
         return user
 
-    def remove_user(self, name):
+    def remove_user(self, name): # XXX delete(object)?
         user = self.user(name)
         self.sa.DeleteUser(user._ecuser.UserID)
 
@@ -508,8 +514,12 @@ Looks at command-line to see if another server address or other related options 
         except ZarafaException:
             pass
 
+    def remove_company(self, name): # XXX delete(object)?
+        company = self.company(name)
+        self.sa.DeleteCompany(company._eccompany.CompanyID)
+
     def _companylist(self): # XXX fix self.sa.GetCompanyList(MAPI_UNICODE)? looks like it's not swigged correctly?
-        self.sa.GetCompanyList(0) # XXX exception for single-tenant....
+        self.sa.GetCompanyList(MAPI_UNICODE) # XXX exception for single-tenant....
         return MAPI.Util.AddressBook.GetCompanyList(self.mapisession, MAPI_UNICODE)
 
     def companies(self, remote=False): # XXX remote?
@@ -573,7 +583,7 @@ Looks at command-line to see if another server address or other related options 
         """ public :class:`store <Store>` in single-company mode """
 
         try:
-            self.sa.GetCompanyList(0)
+            self.sa.GetCompanyList(MAPI_UNICODE)
             raise ZarafaException('request for server-wide public store in multi-company setup')
         except MAPIErrorNoSupport:
             return self.companies().next().public_store
@@ -694,10 +704,10 @@ class Store(object):
         return bin2hex(HrGetOneProp(self.mapiobj, PR_STORE_RECORD_KEY).Value)
 
     @property
-    def root(self): #TODO: make this return a zarafa.Folder
-        """ :class:`IMAPIFolder` designated as userstore root """
+    def root(self):
+        """ :class:`Folder` designated as store root """
 
-        return self._root
+        return Folder(self, HrGetOneProp(self._root, PR_ENTRYID).Value, root=True)
 
     @property
     def inbox(self):
@@ -859,18 +869,12 @@ class Store(object):
     @property
     def last_logon(self):
         """ Return :datetime Last logon of a user on this store """
-        try:
-            return self.prop(PR_LAST_LOGON_TIME).value
-        except MAPIErrorNotFound:
-            return None
+        return self.prop(PR_LAST_LOGON_TIME).value or None
 
     @property
     def last_logoff(self):
         """ Return :datetime of the last logoff of a user on this store """
-        try:
-            return self.prop(PR_LAST_LOGOFF_TIME).value
-        except:
-            return None
+        return self.prop(PR_LAST_LOGOFF_TIME).value or None
 
     def prop(self, proptag):
         return _prop(self, self.mapiobj, proptag)
@@ -890,9 +894,10 @@ class Folder(object):
 
     """
 
-    def __init__(self, store, entryid, associated=False):
+    def __init__(self, store, entryid, associated=False, root=False):
         self.store = store
         self.server = store.server
+        self.root = root
         self._entryid = entryid
         self.mapiobj = store.mapiobj.OpenEntry(entryid, IID_IMAPIFolder, MAPI_MODIFY)
         self.content_flag = MAPI_ASSOCIATED if associated else 0
@@ -911,7 +916,10 @@ class Folder(object):
     def name(self):
         """ Folder name """
 
-        return HrGetOneProp(self.mapiobj, PR_DISPLAY_NAME_W).Value
+        if self.root:
+            return u'ROOT'
+        else:
+            return HrGetOneProp(self.mapiobj, PR_DISPLAY_NAME_W).Value
 
     def item(self, entryid):
         """ Return :class:`Item` with given entryid; raise exception of not found """ # XXX better exception?
@@ -938,8 +946,12 @@ class Folder(object):
                 item.mapiobj = _openentry_raw(self.store.mapiobj, PpropFindProp(row, PR_ENTRYID).Value, MAPI_MODIFY)
                 yield item
 
-    def create_item(self, eml=None): # XXX associated
-        return Item(self, eml=eml)
+    def create_item(self, eml=None, ics=None, **kwargs): # XXX associated
+        item = Item(self, eml=eml, ics=ics, create=True)
+        item.server = self.server
+        for key, val in kwargs.items():
+            setattr(item, key, val)
+        return item
 
     @property
     def size(self): # XXX bit slow perhaps? :P
@@ -998,9 +1010,9 @@ class Folder(object):
 
         matches = [f for f in self.folders() if f.entryid == key or f.name == key]
         if len(matches) == 0:
-            raise ZarafaException("no such folder: '%s'" % key)
+            raise ZarafaNotFoundException("no such folder: '%s'" % key)
         elif len(matches) > 1:
-            raise ZarafaException("multiple folders with name/entryid '%s'" % key)
+            raise ZarafaNotFoundException("multiple folders with name/entryid '%s'" % key)
         else:
             return matches[0]
 
@@ -1103,20 +1115,37 @@ class Folder(object):
 class Item(object):
     """ Item """
 
-    def __init__(self, folder=None, eml=None, mail=None):
+    def __init__(self, folder=None, eml=None, ics=None, create=False):
         # TODO: self.folder fix this!
         self.emlfile = eml
         self._folder = folder
-
-        # if eml is given, set Item
-        if eml is not None and self.folder is not None:
-            # options for CreateMessage: 0 / MAPI_ASSOCIATED
-            self.mapiobj = self.folder.mapiobj.CreateMessage(None, 0)
-            dopt = inetmapi.delivery_options()
-            inetmapi.IMToMAPI(self.folder.store.server.mapisession, self.folder.store.mapiobj, None, self.mapiobj, self.emlfile, dopt)
-            self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
-
         self._architem = None
+
+        if create:
+            self.mapiobj = self.folder.mapiobj.CreateMessage(None, 0)
+            server = self.folder.store.server # XXX
+
+            if eml is not None:
+                # options for CreateMessage: 0 / MAPI_ASSOCIATED
+                dopt = inetmapi.delivery_options()
+                inetmapi.IMToMAPI(server.mapisession, self.folder.store.mapiobj, None, self.mapiobj, self.emlfile, dopt)
+
+            elif ics is not None:
+                ab = server.mapisession.OpenAddressBook(0, None, 0)
+                icm = icalmapi.CreateICalToMapi(self.mapiobj, ab, False)
+                icm.ParseICal(ics, 'utf-8', '', None, 0)
+                icm.GetItem(0, 0, self.mapiobj)
+
+            else:
+                container_class = HrGetOneProp(self.folder.mapiobj, PR_CONTAINER_CLASS).Value
+                if container_class == 'IPF.Contact': # XXX just skip first 4 chars?
+                    self.mapiobj.SetProps([SPropValue(PR_MESSAGE_CLASS, 'IPM.Contact')])
+                elif container_class == 'IPF.Appointment':
+                    self.mapiobj.SetProps([SPropValue(PR_MESSAGE_CLASS, 'IPM.Appointment')])
+                else:
+                    self.mapiobj.SetProps([SPropValue(PR_MESSAGE_CLASS, 'IPM.Note')])
+
+            self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
     @property
     def _arch_item(self): # make an explicit connection to archive server so we can handle otherwise silenced errors (MAPI errors in mail bodies for example)
@@ -1165,10 +1194,20 @@ class Item(object):
         except MAPIErrorNotFound:
             pass
 
+    @subject.setter
+    def subject(self, x):
+        self.mapiobj.SetProps([SPropValue(PR_SUBJECT_W, unicode(x))])
+        self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
+
     @property
     def body(self):
         """ Item :class:`body <Body>` """
         return Body(self) # XXX return None if no body..?
+
+    @body.setter
+    def body(self, x):
+        self.mapiobj.SetProps([SPropValue(PR_BODY_W, unicode(x))])
+        self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
     @property
     def received(self):
@@ -1251,14 +1290,18 @@ class Item(object):
             self.emlfile = inetmapi.IMToINet(self.store.server.mapisession, None, self.mapiobj, sopt)
         return self.emlfile
 
-    def submit(self):
+    def send(self):
+        props = []
+        props.append(SPropValue(PR_SENTMAIL_ENTRYID, self.folder.store.sentmail.entryid.decode('hex')))
+        props.append(SPropValue(PR_DELETE_AFTER_SUBMIT, True))
+        self.mapiobj.SetProps(props)
         self.mapiobj.SubmitMessage(0)
 
     @property
     def sender(self):
         """ Sender :class:`Address` """
 
-        return Address(self.server, *(self.prop(p).value for p in (PR_SENT_REPRESENTING_ADDRTYPE, PR_SENT_REPRESENTING_NAME, PR_SENT_REPRESENTING_EMAIL_ADDRESS, PR_SENT_REPRESENTING_ENTRYID)))
+        return Address(self.server, *(self.prop(p).value for p in (PR_SENT_REPRESENTING_ADDRTYPE, PR_SENT_REPRESENTING_NAME_W, PR_SENT_REPRESENTING_EMAIL_ADDRESS, PR_SENT_REPRESENTING_ENTRYID)))
 
     def table(self, name, restriction=None, order=None, columns=None):
         return Table(self.server, self.mapiobj.OpenProperty(name, IID_IMAPITable, 0, 0), name, restriction=restriction, order=order, columns=columns)
@@ -1273,8 +1316,29 @@ class Item(object):
         result = []
         for row in self.table(PR_MESSAGE_RECIPIENTS):
             row = dict([(x.proptag, x) for x in row])
-            result.append(Address(self.server, *(row[p].value for p in (PR_ADDRTYPE, PR_DISPLAY_NAME, PR_EMAIL_ADDRESS, PR_ENTRYID))))
+            result.append(Address(self.server, *(row[p].value for p in (PR_ADDRTYPE, PR_DISPLAY_NAME_W, PR_EMAIL_ADDRESS, PR_ENTRYID))))
         return result
+
+    @property
+    def to(self):
+        return self.recipients() # XXX filter
+
+    @to.setter
+    def to(self, addrs):
+        if isinstance(addrs, (str, unicode)):
+            addrs = [Address(email=s.strip()) for s in unicode(addrs).split(';')]
+        ab = self.server.mapisession.OpenAddressBook(0, None, 0) # XXX
+        names = []
+        for addr in addrs:
+            names.append([
+                SPropValue(PR_RECIPIENT_TYPE, MAPI_TO), 
+                SPropValue(PR_DISPLAY_NAME_W, addr.name or u'nobody'), 
+                SPropValue(PR_ADDRTYPE, 'SMTP'), 
+                SPropValue(PR_EMAIL_ADDRESS, unicode(addr.email)),
+                SPropValue(PR_ENTRYID, ab.CreateOneOff(addr.name or u'nobody', u'SMTP', unicode(addr.email), MAPI_UNICODE)),
+            ])
+        self.mapiobj.ModifyRecipients(0, names)
+        self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
     def __unicode__(self):
         return u'Item(%s)' % self.subject
@@ -1331,7 +1395,7 @@ class Body:
 class Address:
     """ Address """
 
-    def __init__(self, server, addrtype, name, email, entryid):
+    def __init__(self, server=None, addrtype=None, name=None, email=None, entryid=None):
         self.server = server
         self.addrtype = addrtype
         self._name = name
@@ -1468,16 +1532,10 @@ class User(object):
         return bin2hex(self._ecuser.UserID)
 
     @property
-    def admin(self):
-        """ Is user admin"""
-
-        return bool(self._ecuser.IsAdmin)
-
-    @property
     def company(self):
         """ :class:`Company` the user belongs to """
 
-        return Company(self.server, HrGetOneProp(self.mapiobj, PR_EC_COMPANY_NAME).Value or u'Default')
+        return Company(self.server, HrGetOneProp(self.mapiobj, PR_EC_COMPANY_NAME_W).Value or u'Default')
 
     @property # XXX
     def local(self):
