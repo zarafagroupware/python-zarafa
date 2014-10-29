@@ -3,7 +3,6 @@
 from MAPI import *
 from MAPI.Util import *
 import zarafa
-import sys
 
 
 def opt_args():
@@ -16,8 +15,10 @@ def opt_args():
 def main():
     options, args = opt_args()
 
-    ipmsubtree = {} # Always correct values, as we look for the IPM_SUBTREE.
-    entryidstore = {} # IPM_SUBTREE_ENTRYID values on user.store, could be incorrect.
+    restorefoldername = "Zarafa Restored Folders"
+
+    ipmsubtree = {}  # Always correct values, as we look for the IPM_SUBTREE.
+    entryidstore = {}  # IPM_SUBTREE_ENTRYID values on user.store, could be incorrect.
 
     for user in zarafa.Server(options).users(parse=True):
         restoredfolders = False
@@ -30,7 +31,7 @@ def main():
 
         for folder in user.store.folders(system=True):
             if folder.name == "IPM_SUBTREE":
-                if not user.name in ipmsubtree.keys():
+                if user.name not in ipmsubtree.keys():
                     ipmsubtree[user.name] = folder.entryid
 
         if entryidstore[user.name] != ipmsubtree[user.name]:
@@ -47,11 +48,11 @@ def main():
                 print "* Copying source folder '%s' to '%s'" % (srcfld.name, dstfld.name)
                 if not options.dryrun:
                     try:
-                        if user.store.folder("Zarafa Restored Folders"):
+                        if user.store.folder(restorefoldername):
                             restoredfolders = True
-                            resfolder = user.store.folder("Zarafa Restored Folders")
+                            resfolder = user.store.folder(restorefoldername)
                     except zarafa.ZarafaNotFoundException:
-                            restorefolder = dstfld.create_folder("Zarafa Restored Folders")
+                            restorefolder = dstfld.create_folder(restorefoldername)
                             resfolder = user.store.folder(restorefolder.entryid)
                             restoredfolders = True
 
@@ -68,7 +69,6 @@ def main():
 def reminder():
     print "\nIf the /resetfolders parameter was used in Outlook, it will be necessary to run the following script as well:"
     print "https://github.com/zarafagroupware/zarafa-tools/blob/master/mailstore/resetfolders.py"
-
 
 
 if __name__ == "__main__":
