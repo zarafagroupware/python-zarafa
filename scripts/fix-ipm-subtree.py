@@ -60,7 +60,7 @@ def main():
                         if resfolder:
                             srcfld.move(srcfld, resfolder)
                         else:
-                            print "- Unable to move folder into IPM_SUBTREE."
+                            print "- Unable to move '%s' into '%s'" % (srcfld.name, dstfld.name)
 
             elif not ipmsubtree[user.name]:
                 print "- No IPM_SUBTREE present, does the user have a store?"
