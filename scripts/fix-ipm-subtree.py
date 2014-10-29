@@ -49,8 +49,8 @@ def main():
                 if not options.dryrun:
                     try:
                         if user.store.folder(restorefoldername):
-                            restoredfolders = True
                             resfolder = user.store.folder(restorefoldername)
+                            restoredfolders = True
                     except zarafa.ZarafaNotFoundException:
                             restorefolder = dstfld.create_folder(restorefoldername)
                             resfolder = user.store.folder(restorefolder.entryid)
