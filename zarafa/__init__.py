@@ -786,7 +786,7 @@ class Store(object):
             :param key: name or entryid
         """
 
-        matches = [f for f in self.folders() if f.entryid == key or f.name == key]
+        matches = [f for f in self.folders(system=True) if f.entryid == key or f.name == key]
         if len(matches) == 0:
             raise ZarafaNotFoundException("no such folder: '%s'" % key)
         elif len(matches) > 1:
