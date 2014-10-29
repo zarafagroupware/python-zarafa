@@ -788,9 +788,9 @@ class Store(object):
 
         matches = [f for f in self.folders() if f.entryid == key or f.name == key]
         if len(matches) == 0:
-            raise ZarafaException("no such folder: '%s'" % key)
+            raise ZarafaNotFoundException("no such folder: '%s'" % key)
         elif len(matches) > 1:
-            raise ZarafaException("multiple folders with name/entryid '%s'" % key)
+            raise ZarafaNotFoundException("multiple folders with name/entryid '%s'" % key)
         else:
             return matches[0]
 
@@ -946,12 +946,19 @@ class Folder(object):
                 item.mapiobj = _openentry_raw(self.store.mapiobj, PpropFindProp(row, PR_ENTRYID).Value, MAPI_MODIFY)
                 yield item
 
-    def create_item(self, eml=None, ics=None, **kwargs): # XXX associated
-        item = Item(self, eml=eml, ics=ics, create=True)
+    def create_item(self, eml=None, ics=None, vcf=None, **kwargs): # XXX associated
+        item = Item(self, eml=eml, ics=ics, vcf=vcf, create=True)
         item.server = self.server
         for key, val in kwargs.items():
             setattr(item, key, val)
         return item
+
+    def empty(self, associated=False):
+        # DEL_ASSOCIATED | DELETE_HARD_DELETE
+        flags = 0
+        if associated:
+            flags = DEL_ASSOCIATED
+        self.mapiobj.EmptyFolder(0, None, flags)
 
     @property
     def size(self): # XXX bit slow perhaps? :P
@@ -1115,7 +1122,7 @@ class Folder(object):
 class Item(object):
     """ Item """
 
-    def __init__(self, folder=None, eml=None, ics=None, create=False):
+    def __init__(self, folder=None, eml=None, ics=None, vcf=None, create=False):
         # TODO: self.folder fix this!
         self.emlfile = eml
         self._folder = folder
@@ -1136,14 +1143,36 @@ class Item(object):
                 icm.ParseICal(ics, 'utf-8', '', None, 0)
                 icm.GetItem(0, 0, self.mapiobj)
 
+            elif vcf is not None:
+                import vobject
+                v = vobject.readOne(vcf)
+                fullname, email = v.fn.value, str(v.email.value)
+                ab = server.mapisession.OpenAddressBook(0, None, 0) # XXX server property
+                self.mapiobj.SetProps([ # XXX fix/remove non-essential props, figure out hardcoded numbers
+                    SPropValue(PR_ADDRTYPE, 'SMTP'), SPropValue(PR_BODY, ''),
+                    SPropValue(PR_LOCALITY, ''), SPropValue(PR_STATE_OR_PROVINCE, ''),
+                    SPropValue(PR_BUSINESS_FAX_NUMBER, ''), SPropValue(PR_COMPANY_NAME, ''),
+                    SPropValue(0x8130001E, fullname), SPropValue(0x8132001E, 'SMTP'),
+                    SPropValue(0x8133001E, email), SPropValue(0x8134001E, ''),
+                    SPropValue(0x81350102, ab.CreateOneOff('', 'SMTP', email, 0)), # XXX
+                    SPropValue(PR_GIVEN_NAME, ''), SPropValue(PR_MIDDLE_NAME, ''),
+                    SPropValue(PR_NORMALIZED_SUBJECT, ''), SPropValue(PR_TITLE, ''),
+                    SPropValue(PR_TRANSMITABLE_DISPLAY_NAME, ''),
+                    SPropValue(PR_DISPLAY_NAME_W, fullname),
+                    SPropValue(0x80D81003, [0]), SPropValue(0x80D90003, 1), 
+                    SPropValue(PR_MESSAGE_CLASS, 'IPM.Contact'),
+                ])
+
             else:
-                container_class = HrGetOneProp(self.folder.mapiobj, PR_CONTAINER_CLASS).Value
-                if container_class == 'IPF.Contact': # XXX just skip first 4 chars?
-                    self.mapiobj.SetProps([SPropValue(PR_MESSAGE_CLASS, 'IPM.Contact')])
-                elif container_class == 'IPF.Appointment':
-                    self.mapiobj.SetProps([SPropValue(PR_MESSAGE_CLASS, 'IPM.Appointment')])
-                else:
+                try:
+                    container_class = HrGetOneProp(self.folder.mapiobj, PR_CONTAINER_CLASS).Value
+                except MAPIErrorNotFound:
                     self.mapiobj.SetProps([SPropValue(PR_MESSAGE_CLASS, 'IPM.Note')])
+                else:
+                    if container_class == 'IPF.Contact': # XXX just skip first 4 chars? 
+                        self.mapiobj.SetProps([SPropValue(PR_MESSAGE_CLASS, 'IPM.Contact')]) # XXX set default props
+                    elif container_class == 'IPF.Appointment':
+                        self.mapiobj.SetProps([SPropValue(PR_MESSAGE_CLASS, 'IPM.Appointment')]) # XXX set default props
 
             self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
@@ -1289,6 +1318,28 @@ class Item(object):
             sopt.no_recipients_workaround = True
             self.emlfile = inetmapi.IMToINet(self.store.server.mapisession, None, self.mapiobj, sopt)
         return self.emlfile
+
+    def vcf(self): # XXX don't we have this builtin somewhere? very basic for now
+        import vobject
+        v = vobject.vCard()
+        v.add('n')
+        v.n.value = vobject.vcard.Name(family='', given='') # XXX
+        v.add('fn')
+        v.fn.value = ''
+        v.add('email')
+        v.email.value = ''
+        v.email.type_param = 'INTERNET'
+        try:
+            v.fn.value = HrGetOneProp(self.mapiobj, 0x8130001E).Value
+        except MAPIErrorNotFound:
+            pass
+        try:
+            v.email.value = HrGetOneProp(self.mapiobj, 0x8133001E).Value
+        except MAPIErrorNotFound:
+            pass
+        return v.serialize()
+
+    # XXX def ics for ical export?
 
     def send(self):
         props = []
