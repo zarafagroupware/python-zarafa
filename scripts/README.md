@@ -49,4 +49,14 @@ z-tracer.py
 ===========
 
 Z-tracer is a simple Python program that uses ICS to monitor a Folder in the users store for changes: Update/Delete/Create of an item and shows this in a diff format.
-Example isuage is python z-tracer.py -U username -f Inbox (No locale support for Folders)
+Example usage:
+
+python z-tracer.py -U username -f Inbox (No locale support for Folders)
+
+import\_ics.py
+=============
+
+Imports ics (calendar) files into the specified users calendar.
+Example usage:
+
+python import\_ics.py -u username --file item.ics
