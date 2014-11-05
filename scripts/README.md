@@ -44,3 +44,9 @@ z-barplot.py
 ====
 
 Simple Python program that shows a barplot per user (for example items per user)
+
+z-tracer.py
+===========
+
+Z-tracer is a simple Python program that uses ICS to monitor a Folder in the users store for changes: Update/Delete/Create of an item and shows this in a diff format.
+Example isuage is python z-tracer.py -U username -f Inbox (No locale support for Folders)
