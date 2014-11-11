@@ -45,22 +45,21 @@ class Importer:
     def update(self, item, flags):
         print '\033[1;41mUpdate: subject: %s folder: %s sender: %s \033[1;m' % (item.subject, item.folder, item.sender.email)
         if not flags & SYNC_NEW_MESSAGE:
-            old_item = ITEM_MAPPING[item.entryid]
+            old_item = ITEM_MAPPING[item.sourcekey]
         else: 
-            ITEM_MAPPING[item.entryid] = item 
+            ITEM_MAPPING[item.sourcekey] = item 
             old_item = False
 
         prettyprinter(item, old_item)
         print '\033[1;41mEnd Update\033[1;m\n'
 
     def delete(self, item, flags): # only item.sourcekey is available here!
-        entryid = [map_item for map_item in ITEM_MAPPING.values() if item.sourcekey == map_item.sourcekey]
-        rm_item = entryid[0]
+        rm_item = ITEM_MAPPING[item.sourcekey]
         if rm_item:
             print '\033[1;41mBegin Delete: subject: %s folder: %s sender: %s \033[1;m' % (rm_item.subject, rm_item.folder, rm_item.sender.email)
             prettyprinter(rm_item, False, True)
             print '\033[1;41mEnd Delete\033[1;m\n'
-            del ITEM_MAPPING[rm_item.entryid]
+            del ITEM_MAPPING[rm_item.sourcekey]
 
 def main():
     options, args = opt_args()
@@ -78,7 +77,7 @@ def main():
         print 'Monitoring folder %s of %s for update and delete events' % (folder, user.fullname)
         # Create mapping
         for item in folder.items():
-            ITEM_MAPPING[item.entryid] = item
+            ITEM_MAPPING[item.sourcekey] = item
         print 'Memory mapping of items complete'
 
         folder_state = folder.state
