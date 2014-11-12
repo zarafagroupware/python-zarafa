@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import ConfigParser
 import sys
+import re
 import subprocess
 import datetime
 import zarafa
@@ -11,7 +12,8 @@ delcounter = 0
 def main():
     global delcounter
     learncounter = 0
-    (users, allusers, remoteusers, autolearn, autodelete, deleteafter, spamcommand) = getconfig()
+    hamlearncounter = 0
+    (users, allusers, remoteusers, autolearn, autodelete, deleteafter, spamcommand, hamcommand) = getconfig()
     z = zarafa.Server()
     if allusers and not users:
         users = []
@@ -20,6 +22,27 @@ def main():
     for username in users:
         try:
             user = z.user(username)
+            inboxelements = 0
+            nospamFolder = user.store.inbox.folder("NoSpam")
+            p = re.compile("\[SPAM\] ")
+            for item in nospamFolder.items():
+                if (inboxelements > 100):
+                    break
+                if autolearn:
+                    if (item.header('x-spam-flag') and item.header('x-spam-flag') == 'YES'):
+                        inboxelements += 1
+                        print "%s : tagged spam in inbox [Subject: %s]" % (user.name, item.subject)
+                        try:
+                            hp = subprocess.Popen(hamcommand, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+                            learn, ham_output_error = hp.communicate(item.eml())
+                        except:
+                            print "failed to run [HAM] [%s]" % ham_output_err
+                        if learn:
+                            item.subject=p.sub('',item.subject)
+                            nospamFolder.move(item, user.store.inbox)
+                            print "%s : learned [%s]" % (user.name, learn.rstrip('\n'))
+                            hamlearncounter += 1
+                        continue
             for item in user.store.junk.items():
                 if autolearn:
                     if (not item.header('x-spam-flag')) or (item.header('x-spam-flag') == 'NO'):
@@ -42,7 +65,7 @@ def main():
         except Exception as error:
             print "%s : Unable to open store/item : [%s] [%s]" % (username, username, error)
             continue
-    print "Summary learned %d items, deleted %d items" % (learncounter, delcounter)
+    print "Summary learned %d SPAM items %d HAM items, deleted %d items" % (learncounter, hamlearncounter, delcounter)
 
 
 def deletejunk(user, item, delmsg):
@@ -67,12 +90,13 @@ def getconfig():
         autodelete = Config.getboolean('deleting', 'autodelete')
         deleteafter = Config.getint('deleting', 'deleteafter')
         spamcommand = Config.get('spamcommand', 'command')
+        hamcommand = Config.get('hamcommand', 'command')
         if not users:
             allusers = True
         else:
             allusers = False
             users = users.replace(" ", "").split(",")
-        return (users, allusers, remoteusers, autolearn, autodelete, deleteafter, spamcommand)
+        return (users, allusers, remoteusers, autolearn, autodelete, deleteafter, spamcommand, hamcommand)
     except:
         exit('Configuration error, please check zarafa-spamhandler.cfg')
 
