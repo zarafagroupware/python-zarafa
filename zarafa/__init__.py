@@ -1096,8 +1096,8 @@ class Folder(object):
             mboxfile.add(item.eml())
         mboxfile.unlock()
 
-    def maildir(self):
-        destination = mailbox.MH(self.name)
+    def maildir(self, path=''):
+        destination = mailbox.MH(path + self.name)
         destination.lock()
         for item in self.items():
             destination.add(item.eml())
