@@ -639,7 +639,7 @@ class Company(object):
             if pubstore is None:
                 return None
             return Store(self.server, pubstore, True)
-        publicstoreid = self.server.ems.CreateStoreEntryID(None, self._name, 0)
+        publicstoreid = self.server.ems.CreateStoreEntryID(None, self._name, MAPI_UNICODE)
         publicstore = self.server.mapisession.OpenMsgStore(0, publicstoreid, None, MDB_WRITE)
         return Store(self.server, publicstore, True)
 
