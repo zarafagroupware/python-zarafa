@@ -1,7 +1,7 @@
-""" 
+"""
 High-level python bindings for Zarafa
 
-Copyright 2014 Zarafa and contributors, license AGPLv3 (see LICENSE file for details)                                                                                                                                                                                                                                          
+Copyright 2014 Zarafa and contributors, license AGPLv3 (see LICENSE file for details)
 
 Some goals:
 
@@ -345,7 +345,6 @@ Looks at command-line to see if another server address or other related options 
 :param log: logger object to receive useful (debug) information
 :param options: OptionParser instance to get settings from (see :func:`parser`)
 
-    
 """
 
     def __init__(self, options=None, config=None, sslkey_file=None, sslkey_pass=None, server_socket=None, auth_user=None, auth_pass=None, log=None, service=None):
@@ -377,7 +376,7 @@ Looks at command-line to see if another server address or other related options 
         elif config:
             if not (server_socket or getattr(self.options, 'server_socket')): # XXX generalize
                 self.server_socket = config.get('server_socket')
-                self.sslkey_file = config.get('sslkey_file') 
+                self.sslkey_file = config.get('sslkey_file')
                 self.sslkey_pass = config.get('sslkey_pass')
         else:
             self.server_socket = 'file:///var/run/zarafa'
@@ -456,7 +455,7 @@ Looks at command-line to see if another server address or other related options 
             pass
 
     def users(self, remote=False, system=False, parse=True):
-        """ Return all :class:`users <User>` on server 
+        """ Return all :class:`users <User>` on server
 
             :param remote: include users on remote server nodes
             :param system: include system users
@@ -523,7 +522,7 @@ Looks at command-line to see if another server address or other related options 
         return MAPI.Util.AddressBook.GetCompanyList(self.mapisession, MAPI_UNICODE)
 
     def companies(self, remote=False): # XXX remote?
-        """ Return all :class:`companies <Company>` on server 
+        """ Return all :class:`companies <Company>` on server
 
             :param remote: include companies without users on this server node
         """
@@ -595,12 +594,11 @@ Looks at command-line to see if another server address or other related options 
         return _state(self.mapistore)
 
     def sync(self, importer, state, log=None, max_changes=None):
-        """ Perform synchronization against server node 
+        """ Perform synchronization against server node
 
         :param importer: importer instance with callbacks to process changes
         :param state: start from this state (has to be given)
-        :log: logger instance to receive important warnings/errors 
-        
+        :log: logger instance to receive important warnings/errors
         """
 
         importer.store = None
@@ -889,8 +887,8 @@ class Store(object):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
 
 class Folder(object):
-    """ 
-    Item Folder 
+    """
+    Item Folder
 
     """
 
@@ -953,12 +951,18 @@ class Folder(object):
             setattr(item, key, val)
         return item
 
-    def empty(self, associated=False):
+    def empty(self, subfolder=True, associated=False):
+        """ Deletes all messages and subfolders from a folder without deleting the folder itself.
+            When subfolder=False is specified, it does not remove subfolders, but only emtpies the fodler itself
+        """
         # DEL_ASSOCIATED | DELETE_HARD_DELETE
         flags = 0
         if associated:
             flags = DEL_ASSOCIATED
-        self.mapiobj.EmptyFolder(0, None, flags)
+        if subfolder:
+            self.mapiobj.EmptyFolder(0, None, flags)
+        else:
+            self.delete(self.items()) # XXX slow
 
     @property
     def size(self): # XXX bit slow perhaps? :P
@@ -1073,8 +1077,7 @@ class Folder(object):
 
         :param importer: importer instance with callbacks to process changes
         :param state: start from this state; if not given sync from scratch
-        :log: logger instance to receive important warnings/errors 
-        
+        :log: logger instance to receive important warnings/errors
         """
 
         if state is None:
@@ -1278,7 +1281,6 @@ class Item(object):
         """ Return item :class:`attachments <Attachment>`
 
         :param embedded: include embedded attachments
-        
         """
 
         mapiitem = self._arch_item
@@ -1792,7 +1794,7 @@ def daemonize(func, options=None, foreground=False, args=[], log=None, config=No
         pidfile = None
         if args:
             pidfile = '/var/run/zarafa-%s.pid' % args[0].name
-        if config: 
+        if config:
             working_directory = config.get('running_path')
             pidfile = config.get('pid_file')
             if config.get('run_as_user'):
@@ -1822,10 +1824,10 @@ def daemonize(func, options=None, foreground=False, args=[], log=None, config=No
 #                        pidfile.break_lock()
         with daemon.DaemonContext(
                 pidfile=pidfile,
-                uid=uid, 
+                uid=uid,
                 gid=gid,
                 working_directory=working_directory,
-                files_preserve=[h.stream for h in log.handlers if isinstance(h, logging.handlers.WatchedFileHandler)] if log else None, 
+                files_preserve=[h.stream for h in log.handlers if isinstance(h, logging.handlers.WatchedFileHandler)] if log else None,
                 prevent_core=False,
             ):
             daemon_helper(func, service, log)
@@ -1869,14 +1871,14 @@ def logger(service, options=None, stdout=False, config=None, name=''):
     return logger
 
 def parser(options='cskpUPufmv'):
-    """ 
+    """
 Return OptionParser instance from the standard ``optparse`` module, containing common zarafa command-line options
 
 :param options: string containing a char for each desired option, default "cskpUPufmvV"
 
 Available options:
 
--c, --config: Path to configuration file 
+-c, --config: Path to configuration file
 
 -s, --server-socket: Zarafa server socket address
 
@@ -1899,7 +1901,6 @@ Available options:
 -v, --verbose: Depending on program, enable verbose output (python-zarafa does not check this!)
 
 -V, --version: Show program version and exit
-    
 """
 
     parser = optparse.OptionParser()
@@ -2024,7 +2025,7 @@ Configuration class
 
 Example::
 
-    config = Config({ 
+    config = Config({
         'some_str': Config.String(default='blah'),
         'number': Config.Integer(),
         'filesize': Config.size(), # understands '5MB' etc
@@ -2207,7 +2208,7 @@ class QueueListener(object):
         self._thread = None
 
 class Service:
-    """ 
+    """
 Encapsulates everything to create a simple Zarafa service, such as:
 
 - Locating and parsing a configuration file
