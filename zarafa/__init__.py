@@ -575,7 +575,7 @@ Looks at command-line to see if another server address or other related options 
         table.SetColumns([PR_DISPLAY_NAME_W, PR_ENTRYID, PR_EC_STORETYPE], 0)
         for row in table.QueryRows(100, 0):
             store = Store(self, self.mapisession.OpenMsgStore(0, row[1].Value, None, MDB_WRITE), row[2].Value == ECSTORE_TYPE_PUBLIC)
-            if system or (store.user and store.user.name != 'SYSTEM'):
+            if system or store.public or (store.user and store.user.name != 'SYSTEM'):
                 yield store
 
     @property
