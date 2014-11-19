@@ -707,7 +707,7 @@ class Store(object):
     def root(self):
         """ :class:`Folder` designated as store root """
 
-        return Folder(self, HrGetOneProp(self._root, PR_ENTRYID).Value, root=True)
+        return Folder(self, HrGetOneProp(self._root, PR_ENTRYID).Value)
 
     @property
     def inbox(self):
@@ -894,10 +894,9 @@ class Folder(object):
 
     """
 
-    def __init__(self, store, entryid, associated=False, root=False):
+    def __init__(self, store, entryid, associated=False):
         self.store = store
         self.server = store.server
-        self.root = root
         self._entryid = entryid
         self.mapiobj = store.mapiobj.OpenEntry(entryid, IID_IMAPIFolder, MAPI_MODIFY)
         self.content_flag = MAPI_ASSOCIATED if associated else 0
@@ -909,6 +908,15 @@ class Folder(object):
         return bin2hex(self._entryid)
 
     @property
+    def parent(self):
+        """Return :class:`parent <Folder>` or None"""
+        # PR_PARENT_ENTRYID for the message store root folder is it's own PR_ENTRYID
+        try:
+            return Folder(self.store, self.prop(PR_PARENT_ENTRYID).value)
+        except MAPIErrorNotFound: # XXX: Should not happen
+            return None
+
+    @property
     def folderid(self):
         return HrGetOneProp(self.mapiobj, PR_EC_HIERARCHYID).Value
 
@@ -916,10 +924,10 @@ class Folder(object):
     def name(self):
         """ Folder name """
 
-        if self.root:
-            return u'ROOT'
-        else:
+        try:
             return HrGetOneProp(self.mapiobj, PR_DISPLAY_NAME_W).Value
+        except MAPIErrorNotFound:
+            return u'ROOT'
 
     def item(self, entryid):
         """ Return :class:`Item` with given entryid; raise exception of not found """ # XXX better exception?
