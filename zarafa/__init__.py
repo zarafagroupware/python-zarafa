@@ -1043,7 +1043,11 @@ class Folder(object):
 
 #        if self.mapiobj.GetProps([PR_SUBFOLDERS], MAPI_UNICODE)[0].Value: # XXX no worky?
         if True:
-            table = self.mapiobj.GetHierarchyTable(MAPI_UNICODE)
+            try:
+                table = self.mapiobj.GetHierarchyTable(MAPI_UNICODE)
+            except MAPIErrorNoSupport: # XXX webapp search folder?
+                return
+
             table.SetColumns([PR_ENTRYID, PR_FOLDER_TYPE, PR_DISPLAY_NAME_W], 0)
             rows = table.QueryRows(-1, 0)
             for row in rows:
