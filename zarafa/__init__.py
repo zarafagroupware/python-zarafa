@@ -81,8 +81,8 @@ from MAPI.Util.Generators import *
 import MAPI.Util.AddressBook
 import MAPI.Tags
 import _MAPICore
-import icalmapi
 import inetmapi
+import icalmapi
 
 try:
     REV_TYPE
