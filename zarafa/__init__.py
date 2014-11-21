@@ -1647,7 +1647,11 @@ class User(object):
 
     @property
     def archive_servers(self):
-       return HrGetOneProp(self.mapiobj, PR_EC_ARCHIVE_SERVERS).Value
+        try:
+            return HrGetOneProp(self.mapiobj, PR_EC_ARCHIVE_SERVERS).Value
+        except MAPIErrorNotFound:
+            return
+
 
     def prop(self, proptag):
         return _prop(self, self.mapiobj, proptag)
