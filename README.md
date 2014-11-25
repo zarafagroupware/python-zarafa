@@ -7,6 +7,7 @@ python-zarafa depends on the following modules:
 * Python 2.6 or higher
 * [python-mapi](http://download.zarafa.com/community/final/7.1/7.1.9-44333/) (Provided by ZCP)
 * [python-daemon](https://pypi.python.org/pypi/python-daemon/)
+* [python-vobject](http://vobject.skyhouseconsulting.com/) Optional dependency for exporting MAPI items to vcard format
 
 Please keep in mind that this API is written to work on the latest version of Zarafa.  
 In result certain features may not work on older versions.
