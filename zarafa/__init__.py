@@ -1381,7 +1381,7 @@ class Item(object):
         result = []
         for row in self.table(PR_MESSAGE_RECIPIENTS):
             row = dict([(x.proptag, x) for x in row])
-            result.append(Address(self.server, *(row[p].value for p in (PR_ADDRTYPE, PR_DISPLAY_NAME_W, PR_EMAIL_ADDRESS, PR_ENTRYID))))
+            result.append(Address(self.server, *(row[p].value for p in (PR_ADDRTYPE, PR_DISPLAY_NAME, PR_EMAIL_ADDRESS, PR_ENTRYID))))
         return result
 
     @property
