@@ -411,7 +411,7 @@ Looks at command-line to see if another server address or other related options 
         self._archive_sessions = {}
 
     def table(self, name, restriction=None, order=None, columns=None):
-        return Table(self, self.mapistore.OpenProperty(name, IID_IMAPITable, 0, 0), name, restriction=restriction, order=order, columns=columns)
+        return Table(self, self.mapistore.OpenProperty(name, IID_IMAPITable, MAPI_UNICODE, 0), name, restriction=restriction, order=order, columns=columns)
 
     def tables(self):
         for table in (PR_EC_STATSTABLE_SYSTEM, PR_EC_STATSTABLE_SESSIONS, PR_EC_STATSTABLE_USERS, PR_EC_STATSTABLE_COMPANY, PR_EC_STATSTABLE_SERVERS):
@@ -1071,7 +1071,7 @@ class Folder(object):
         return _props(self.mapiobj)
 
     def table(self, name, restriction=None, order=None, columns=None): # XXX associated, PR_CONTAINER_CONTENTS?
-        return Table(self.server, self.mapiobj.OpenProperty(name, IID_IMAPITable, 0, 0), name, restriction=restriction, order=order, columns=columns)
+        return Table(self.server, self.mapiobj.OpenProperty(name, IID_IMAPITable, MAPI_UNICODE, 0), name, restriction=restriction, order=order, columns=columns)
 
     def tables(self): # XXX associated
         yield self.table(PR_CONTAINER_CONTENTS)
@@ -1366,10 +1366,10 @@ class Item(object):
     def sender(self):
         """ Sender :class:`Address` """
 
-        return Address(self.server, *(self.prop(p).value for p in (PR_SENT_REPRESENTING_ADDRTYPE, PR_SENT_REPRESENTING_NAME_W, PR_SENT_REPRESENTING_EMAIL_ADDRESS, PR_SENT_REPRESENTING_ENTRYID)))
+        return Address(self.server, *(self.prop(p).value for p in (PR_SENT_REPRESENTING_ADDRTYPE_W, PR_SENT_REPRESENTING_NAME_W, PR_SENT_REPRESENTING_EMAIL_ADDRESS_W, PR_SENT_REPRESENTING_ENTRYID)))
 
     def table(self, name, restriction=None, order=None, columns=None):
-        return Table(self.server, self.mapiobj.OpenProperty(name, IID_IMAPITable, 0, 0), name, restriction=restriction, order=order, columns=columns)
+        return Table(self.server, self.mapiobj.OpenProperty(name, IID_IMAPITable, MAPI_UNICODE, 0), name, restriction=restriction, order=order, columns=columns)
 
     def tables(self):
         yield self.table(PR_MESSAGE_RECIPIENTS)
@@ -1381,7 +1381,7 @@ class Item(object):
         result = []
         for row in self.table(PR_MESSAGE_RECIPIENTS):
             row = dict([(x.proptag, x) for x in row])
-            result.append(Address(self.server, *(row[p].value for p in (PR_ADDRTYPE, PR_DISPLAY_NAME, PR_EMAIL_ADDRESS, PR_ENTRYID))))
+            result.append(Address(self.server, *(row[p].value for p in (PR_ADDRTYPE_W, PR_DISPLAY_NAME_W, PR_EMAIL_ADDRESS_W, PR_ENTRYID))))
         return result
 
     @property
