@@ -107,12 +107,18 @@ NAMED_PROPS_ARCHIVER = [MAPINAMEID(PSETID_Archive, MNID_STRING, u'store-entryids
 GUID_NAMESPACE = {PSETID_Archive: 'archive'}
 NAMESPACE_GUID = {'archive': PSETID_Archive}
 
-# XXX copied from common/ECDefs.h - can we SWIG this stuff?
+# XXX copied from common/ECDefs.h
 def OBJECTCLASS(__type, __class):
     return (__type << 16) | (__class & 0xFFFF)
 
 OBJECTTYPE_MAILUSER = 1
 ACTIVE_USER = OBJECTCLASS(OBJECTTYPE_MAILUSER, 1)
+
+# XXX copied from zarafa-msr/main.py
+MUIDECSAB = DEFINE_GUID(0x50a921ac, 0xd340, 0x48ee, 0xb3, 0x19, 0xfb, 0xa7, 0x53, 0x30, 0x44, 0x25)
+def DEFINE_ABEID(type, id):
+    return struct.pack("4B16s3I4B", 0, 0, 0, 0, MUIDECSAB, 0, type, id, 0, 0, 0, 0)
+EID_EVERYONE = DEFINE_ABEID(MAPI_DISTLIST, 1)
 
 def _prop(self, mapiobj, proptag):
     if isinstance(proptag, (int, long)):
@@ -576,6 +582,11 @@ Looks at command-line to see if another server address or other related options 
             store = Store(self, self.mapisession.OpenMsgStore(0, row[1].Value, None, MDB_WRITE), row[2].Value == ECSTORE_TYPE_PUBLIC)
             if system or store.public or (store.user and store.user.name != 'SYSTEM'):
                 yield store
+
+    def create_store(self, public=False):
+        if public:
+            mapistore = self.sa.CreateStore(ECSTORE_TYPE_PUBLIC, EID_EVERYONE)
+            return Store(self, mapistore, True)
 
     @property
     def public_store(self):
