@@ -100,6 +100,9 @@ except NameError:
         if K.startswith('PR_'):
             REV_TAG[V] = K
 
+PS_INTERNET_HEADERS = DEFINE_OLEGUID(0x00020386, 0, 0)
+NAMED_PROPS_INTERNET_HEADERS = [MAPINAMEID(PS_INTERNET_HEADERS, MNID_STRING, u'x-original-to'),]
+
 # XXX clean up and improve for common guids/namepaces
 PSETID_Archive = DEFINE_GUID(0x72e98ebc, 0x57d2, 0x4ab5, 0xb0, 0xaa, 0xd5, 0x0a, 0x7b, 0x53, 0x1c, 0xb9)
 NAMED_PROPS_ARCHIVER = [MAPINAMEID(PSETID_Archive, MNID_STRING, u'store-entryids'), MAPINAMEID(PSETID_Archive, MNID_STRING, u'item-entryids'), MAPINAMEID(PSETID_Archive, MNID_STRING, u'stubbed'),]
