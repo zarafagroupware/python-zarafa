@@ -116,6 +116,7 @@ def OBJECTCLASS(__type, __class):
 
 OBJECTTYPE_MAILUSER = 1
 ACTIVE_USER = OBJECTCLASS(OBJECTTYPE_MAILUSER, 1)
+INACTIVE_USER = OBJECTCLASS(OBJECTTYPE_MAILUSER, 0)
 
 # XXX copied from zarafa-msr/main.py
 MUIDECSAB = DEFINE_GUID(0x50a921ac, 0xd340, 0x48ee, 0xb3, 0x19, 0xfb, 0xa7, 0x53, 0x30, 0x44, 0x25)
@@ -488,21 +489,63 @@ Looks at command-line to see if another server address or other related options 
                     elif not remote and user.local: # XXX check if GetUserList can filter local/remote users
                         yield user
 
-    def create_user(self, name, password=None, company=None, fullname=None, create_store=True):
+    def create_user(self, name, email, password=None, company=None, fullname=None, create_store=True):
+        """ Create a new :class:`user <Users>` on the server
+
+        :param name: the login name of the new user
+        :param email: the email address of the user
+        :param password: the login password of the user
+        :param company: the company of the user
+        :param fullname: the full name of the user
+        :param create_store: should a store be created for the new user
+        :return: :class:`<User>`
+        """
         name = unicode(name)
         fullname = unicode(fullname or '')
+        email = unicode(email)
         if password:
             password = unicode(password)
         if company:
             company = unicode(company)
         if company and company != u'Default':
-            usereid = self.sa.CreateUser(ECUSER(u'%s@%s' % (name, company), password, u'email@domain.com', fullname), MAPI_UNICODE)
+            usereid = self.sa.CreateUser(ECUSER(u'%s@%s' % (name, company), password, email, fullname), MAPI_UNICODE)
             user = self.company(company).user(u'%s@%s' % (name, company))
         else:
-            usereid = self.sa.CreateUser(ECUSER(name, password, u'email@domain.com', fullname), MAPI_UNICODE)
+            usereid = self.sa.CreateUser(ECUSER(name, password, email, fullname), MAPI_UNICODE)
             user = self.user(name)
         if create_store:
             self.sa.CreateStore(ECSTORE_TYPE_PRIVATE, user.userid.decode('hex'))
+        return user
+
+    def update_user(self, username, new_login, email, fullname, is_active):
+        """ Update a :class:`user <Users>` on the server
+
+        :param username: the current username of the user to update
+        :param new_login: the new login name of user
+        :param email: the email address of the user
+        :param fullname: the full name of the user
+        :param is_active: is the user an active user
+        :return: :class:`<User>`
+        """
+        user = self.get_user(username)
+        userid = user._ecuser.UserID
+        store = user.store
+
+        new_login = unicode(new_login)
+        fullname = unicode(fullname or '')
+        email = unicode(email)
+
+        if is_active:
+            is_active = ACTIVE_USER
+        else:
+            is_active = INACTIVE_USER
+
+        self.sa.UnhookStore(ECSTORE_TYPE_PRIVATE, user.userid.decode('hex'))
+        usereid = self.sa.SetUser(ECUSER(Username=new_login, Password=user._ecuser.Password, Email=email, FullName=fullname,
+                                         Class=is_active, UserID=userid), MAPI_UNICODE)
+        self.sa.HookStore(ECSTORE_TYPE_PRIVATE, user.userid.decode('hex'), store.guid.decode('hex'))
+
+        user = self.user(new_login)
         return user
 
     def remove_user(self, name): # XXX delete(object)?
