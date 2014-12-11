@@ -116,6 +116,7 @@ def OBJECTCLASS(__type, __class):
 
 OBJECTTYPE_MAILUSER = 1
 ACTIVE_USER = OBJECTCLASS(OBJECTTYPE_MAILUSER, 1)
+NONACTIVE_USER = OBJECTCLASS(OBJECTTYPE_MAILUSER, 2)
 
 # XXX copied from zarafa-msr/main.py
 MUIDECSAB = DEFINE_GUID(0x50a921ac, 0xd340, 0x48ee, 0xb3, 0x19, 0xfb, 0xa7, 0x53, 0x30, 0x44, 0x25)
@@ -488,18 +489,32 @@ Looks at command-line to see if another server address or other related options 
                     elif not remote and user.local: # XXX check if GetUserList can filter local/remote users
                         yield user
 
-    def create_user(self, name, password=None, company=None, fullname=None, create_store=True):
+    def create_user(self, name, email=None, password=None, company=None, fullname=None, create_store=True):
+        """ Create a new :class:`user <Users>` on the server
+
+        :param name: the login name of the new user
+        :param email: the email address of the user
+        :param password: the login password of the user
+        :param company: the company of the user
+        :param fullname: the full name of the user
+        :param create_store: should a store be created for the new user
+        :return: :class:`<User>`
+        """
         name = unicode(name)
         fullname = unicode(fullname or '')
+        if email:
+            email = unicode(email)
+        else:
+            email = u'%s@%s' % (name, socket.gethostname())
         if password:
             password = unicode(password)
         if company:
             company = unicode(company)
         if company and company != u'Default':
-            usereid = self.sa.CreateUser(ECUSER(u'%s@%s' % (name, company), password, u'email@domain.com', fullname), MAPI_UNICODE)
+            usereid = self.sa.CreateUser(ECUSER(u'%s@%s' % (name, company), password, email, fullname), MAPI_UNICODE)
             user = self.company(company).user(u'%s@%s' % (name, company))
         else:
-            usereid = self.sa.CreateUser(ECUSER(name, password, u'email@domain.com', fullname), MAPI_UNICODE)
+            usereid = self.sa.CreateUser(ECUSER(name, password, email, fullname), MAPI_UNICODE)
             user = self.user(name)
         if create_store:
             self.sa.CreateStore(ECSTORE_TYPE_PRIVATE, user.userid.decode('hex'))
@@ -590,6 +605,15 @@ Looks at command-line to see if another server address or other related options 
         if public:
             mapistore = self.sa.CreateStore(ECSTORE_TYPE_PUBLIC, EID_EVERYONE)
             return Store(self, mapistore, True)
+
+    def unhook_store(self, user):
+        store = user.store
+        self.sa.UnhookStore(ECSTORE_TYPE_PRIVATE, user.userid.decode('hex'))
+        return store
+
+    def hook_store(self, store, user):
+        self.sa.HookStore(ECSTORE_TYPE_PRIVATE, user.userid.decode('hex'), store.guid.decode('hex'))
+        return store.guid
 
     @property
     def public_store(self):
@@ -1592,17 +1616,29 @@ class User(object):
 
         return self._name
 
+    @name.setter
+    def name(self, value):
+        self._update(username=unicode(value))
+
     @property
     def fullname(self):
         """ Full name """
 
         return self._ecuser.FullName
 
+    @fullname.setter
+    def fullname(self, value):
+        self._update(fullname=unicode(value))
+
     @property
     def email(self):
         """ Email address """
 
         return self._ecuser.Email
+
+    @email.setter
+    def email(self, value):
+        self._update(email=unicode(value))
 
     @property
     def userid(self):
@@ -1655,6 +1691,13 @@ class User(object):
     def active(self):
         return self._ecuser.Class == ACTIVE_USER
 
+    @active.setter
+    def active(self, value):
+        if value:
+            self._update(user_class=ACTIVE_USER)
+        else:
+            self._update(user_class=NONACTIVE_USER)
+
     @property
     def home_server(self):
         return self._ecuser.Servername
@@ -1684,6 +1727,26 @@ class User(object):
 
     def __repr__(self):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
+
+    def _update(self, **kwargs):
+        username = kwargs.get('username', self.name)
+        password = kwargs.get('password', self._ecuser.Password)
+        email = kwargs.get('email', unicode(self._ecuser.Email))
+        fullname = kwargs.get('fullname', unicode(self._ecuser.FullName))
+        user_class = kwargs.get('user_class', self._ecuser.Class)
+
+        if self.active:
+            store = self.server.unhook_store(user=self)
+        usereid = self.server.sa.SetUser(ECUSER(Username=username, Password=password, Email=email, FullName=fullname,
+                                         Class=user_class, UserID=self._ecuser.UserID), MAPI_UNICODE)
+        if self.active:
+            storeguid = self.server.hook_store(store=store, user=self)
+        self._ecuser = self.server.sa.GetUser(self.server.sa.ResolveUserName(username, MAPI_UNICODE), MAPI_UNICODE)
+        if self.name != username:
+            self._name = username
+
+        return self
+
 
 class Quota(object):
     """ Quota """
