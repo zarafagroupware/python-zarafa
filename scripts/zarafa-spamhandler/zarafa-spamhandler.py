@@ -13,7 +13,7 @@ def main():
     global delcounter
     learncounter = 0
     hamlearncounter = 0
-    (users, allusers, remoteusers, autolearn, autodelete, deleteafter, spamcommand, hamcommand) = getconfig()
+    (users, allusers, remoteusers, autolearn, autodelete, deleteafter, spamcommand, hamfolder, hammarkertoremove, hamfoldercreate, hamcommand, hamlimit) = getconfig()
     z = zarafa.Server()
     if allusers and not users:
         users = []
@@ -23,10 +23,18 @@ def main():
         try:
             user = z.user(username)
             inboxelements = 0
-            nospamFolder = user.store.inbox.folder("NoSpam")
-            p = re.compile("\[SPAM\] ")
+            try:
+               nospamFolder = user.store.inbox.folder(hamfolder)
+            except:
+               if(hamfoldercreate):
+                  print "%s : create ham folder [%s]" % (user.name, hamfolder)
+                  nospamFolder = user.store.inbox.create_folder(hamfolder)
+               else:
+                  print "%s : has not ham folder [%s]" % (user.name, hamfolder)
+                  continue
+            p = re.compile(hammarkertoremove)
             for item in nospamFolder.items():
-                if (inboxelements > 100):
+                if (hamlimit > 0 and inboxelements > hamlimit):
                     break
                 if autolearn:
                     if (item.header('x-spam-flag') and item.header('x-spam-flag') == 'YES'):
@@ -90,14 +98,20 @@ def getconfig():
         autodelete = Config.getboolean('deleting', 'autodelete')
         deleteafter = Config.getint('deleting', 'deleteafter')
         spamcommand = Config.get('spamcommand', 'command')
-        hamcommand = Config.get('hamcommand', 'command')
+        hamfolder = Config.get('ham', 'folder')
+        hamfoldercreate = Config.getboolean('ham', 'create')
+        hammarkertoremove = Config.get('ham', 'marker')
+        hamcommand = Config.get('ham', 'command')
+        hamlimit = Config.get('ham', 'limit')
+
         if not users:
             allusers = True
         else:
             allusers = False
             users = users.replace(" ", "").split(",")
-        return (users, allusers, remoteusers, autolearn, autodelete, deleteafter, spamcommand, hamcommand)
-    except:
+        return (users, allusers, remoteusers, autolearn, autodelete, deleteafter, spamcommand, hamfolder, hammarkertoremove, hamfoldercreate, hamcommand, hamlimit)
+    except Exception as error:
+        print error
         exit('Configuration error, please check zarafa-spamhandler.cfg')
 
 
