@@ -789,6 +789,18 @@ class Store(object):
         return Folder(self, HrGetOneProp(self.mapiobj, PR_IPM_WASTEBASKET_ENTRYID).Value)
 
     @property
+    def journal(self):
+        """ :class:`Folder` designated as journal """
+
+        return Folder(self, HrGetOneProp(self._root, PR_IPM_JOURNAL_ENTRYID).Value)
+
+    @property
+    def notes(self):
+        """ :class:`Folder` designated as notes """
+
+        return Folder(self, HrGetOneProp(self._root, PR_IPM_NOTE_ENTRYID).Value)
+
+    @property
     def sentmail(self):
         """ :class:`Folder` designated as sentmail """
 
