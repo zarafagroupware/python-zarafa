@@ -810,7 +810,7 @@ class Store(object):
     def tasks(self):
         """ :class:`Folder` designated as tasks """
 
-        return Folder(self, HrGetOneProp(self.mapiobj, PR_IPM_TASK_ENTRYID).Value)
+        return Folder(self, HrGetOneProp(self._root, PR_IPM_TASK_ENTRYID).Value)
 
     @property
     def subtree(self):
