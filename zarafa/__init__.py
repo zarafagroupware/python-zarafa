@@ -143,9 +143,12 @@ def _props(mapiobj, namespace=None):
     props1 =[Property(mapiobj, b, c, d) for (b, c, d) in result]
     return [p for p in props1 if not namespace or p.namespace == namespace]
 
-def _state(mapiobj):
+def _state(mapiobj, associated=False):
     exporter = mapiobj.OpenProperty(PR_CONTENTS_SYNCHRONIZER, IID_IExchangeExportChanges, 0, 0)
-    exporter.Config(None, SYNC_NORMAL | SYNC_CATCHUP, None, None, None, None, 0)
+    if associated:
+        exporter.Config(None, SYNC_NORMAL | SYNC_ASSOCIATED | SYNC_CATCHUP, None, None, None, None, 0)
+    else:
+        exporter.Config(None, SYNC_NORMAL | SYNC_CATCHUP, None, None, None, None, 0)
     steps, step = None, 0
     while steps != step:
         steps, step = exporter.Synchronize(step)
@@ -154,13 +157,16 @@ def _state(mapiobj):
     stream.Seek(0, MAPI.STREAM_SEEK_SET)
     return bin2hex(stream.Read(0xFFFFF))
 
-def _sync(server, syncobj, importer, state, log, max_changes):
+def _sync(server, syncobj, importer, state, log, max_changes, associated=False):
     importer = TrackingContentsImporter(server, importer, log)
     exporter = syncobj.OpenProperty(PR_CONTENTS_SYNCHRONIZER, IID_IExchangeExportChanges, 0, 0)
     stream = IStream()
     stream.Write(state.decode('hex'))
     stream.Seek(0, MAPI.STREAM_SEEK_SET)
-    exporter.Config(stream, SYNC_NORMAL | SYNC_UNICODE, importer, None, None, None, 0)
+    if associated:
+        exporter.Config(stream, SYNC_NORMAL | SYNC_ASSOCIATED | SYNC_UNICODE, importer, None, None, None, 0)
+    else:
+        exporter.Config(stream, SYNC_NORMAL | SYNC_UNICODE, importer, None, None, None, 0)
     step = retry = changes = 0
     while True:
         try:
@@ -401,7 +407,7 @@ Looks at command-line to see if another server address or other related options 
         self.auth_pass = auth_pass or getattr(self.options, 'auth_pass', None) or ''
         while True:
             try:
-                self.mapisession = OpenECSession(self.auth_user, self.auth_pass, self.server_socket, sslkey_file=self.sslkey_file, sslkey_pass=self.sslkey_pass)
+                self.mapisession = OpenECSession(self.auth_user, self.auth_pass, self.server_socket, sslkey_file=self.sslkey_file, sslkey_pass=self.sslkey_pass) #, providers=['ZARAFA6','ZCONTACTS'])
                 break
             except MAPIErrorNetworkError:
                 if service:
@@ -679,6 +685,14 @@ class Company(object):
         publicstore = self.server.mapisession.OpenMsgStore(0, publicstoreid, None, MDB_WRITE)
         return Store(self.server, publicstore, True)
 
+    def create_store(self, public=False):
+        if public:
+            if self._name == u'Default':
+                mapistore = self.server.sa.CreateStore(ECSTORE_TYPE_PUBLIC, EID_EVERYONE)
+            else:
+                mapistore = self.server.sa.CreateStore(ECSTORE_TYPE_PUBLIC, self._eccompany.CompanyID)
+            return Store(self.server, mapistore, True)
+
     def user(self, name):
         """ Return :class:`user <User>` with given name; raise exception if not found """
 
@@ -824,7 +838,7 @@ class Store(object):
 
         try:
             userid = HrGetOneProp(self.mapiobj, PR_MAILBOX_OWNER_ENTRYID).Value
-            return User(self.server, self.server.sa.GetUser(userid, 0).Username)
+            return User(self.server, self.server.sa.GetUser(userid, MAPI_UNICODE).Username)
         except MAPIErrorNotFound:
             pass
 
@@ -942,11 +956,14 @@ class Folder(object):
 
     """
 
-    def __init__(self, store, entryid, associated=False):
+    def __init__(self, store, entryid, associated=False): # XXX entryid not hex-encoded!?
         self.store = store
         self.server = store.server
         self._entryid = entryid
-        self.mapiobj = store.mapiobj.OpenEntry(entryid, IID_IMAPIFolder, MAPI_MODIFY)
+        try:
+            self.mapiobj = store.mapiobj.OpenEntry(entryid, IID_IMAPIFolder, MAPI_MODIFY)
+        except MAPIErrorNoAccess: # XXX XXX
+            self.mapiobj = store.mapiobj.OpenEntry(entryid, IID_IMAPIFolder, 0)
         self.content_flag = MAPI_ASSOCIATED if associated else 0
 
     @property
@@ -976,6 +993,11 @@ class Folder(object):
             return HrGetOneProp(self.mapiobj, PR_DISPLAY_NAME_W).Value
         except MAPIErrorNotFound:
             return u'ROOT'
+
+    @name.setter
+    def name(self, name):
+        self.mapiobj.SetProps([SPropValue(PR_DISPLAY_NAME_W, unicode(name))])
+        self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
     def item(self, entryid):
         """ Return :class:`Item` with given entryid; raise exception of not found """ # XXX better exception?
@@ -1132,9 +1154,9 @@ class Folder(object):
     def state(self):
         """ Current folder state """
 
-        return _state(self.mapiobj)
+        return _state(self.mapiobj, self.content_flag == MAPI_ASSOCIATED)
 
-    def sync(self, importer, state=None, log=None, max_changes=None):
+    def sync(self, importer, state=None, log=None, max_changes=None, associated=False):
         """ Perform synchronization against folder
 
         :param importer: importer instance with callbacks to process changes
@@ -1145,7 +1167,7 @@ class Folder(object):
         if state is None:
             state = (8*'\0').encode('hex').upper()
         importer.store = self.store
-        return _sync(self.store.server, self.mapiobj, importer, state, log, max_changes)
+        return _sync(self.store.server, self.mapiobj, importer, state, log, max_changes, associated)
 
     def readmbox(self, location):
         for message in mailbox.mbox(location):
@@ -1158,8 +1180,8 @@ class Folder(object):
             mboxfile.add(item.eml())
         mboxfile.unlock()
 
-    def maildir(self, path=''):
-        destination = mailbox.MH(path + '/' + self.name)
+    def maildir(self):
+        destination = mailbox.MH(self.name)
         destination.lock()
         for item in self.items():
             destination.add(item.eml())
