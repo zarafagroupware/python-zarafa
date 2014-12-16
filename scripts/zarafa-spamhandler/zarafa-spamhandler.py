@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 import ConfigParser
 import sys
 import re
@@ -24,11 +23,11 @@ def main():
             user = z.user(username)
             inboxelements = 0
             try:
-               nospamFolder = user.store.inbox.folder(hamfolder)
+               nospamFolder = user.store.folder(hamfolder)
             except:
                if(hamfoldercreate):
                   print "%s : create ham folder [%s]" % (user.name, hamfolder)
-                  nospamFolder = user.store.inbox.create_folder(hamfolder)
+                  nospamFolder = user.store.subtree.create_folder(hamfolder)
                else:
                   print "%s : has not ham folder [%s]" % (user.name, hamfolder)
                   continue
