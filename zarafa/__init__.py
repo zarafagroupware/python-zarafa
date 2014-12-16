@@ -842,19 +842,27 @@ class Store(object):
         except MAPIErrorNotFound:
             pass
 
-    def folder(self, key): # XXX sloowowowww
+    def folder(self, key, recurse=True): # XXX sloowowowww
         """ Return :class:`Folder` with given name or entryid; raise exception if not found
 
             :param key: name or entryid
         """
 
-        matches = [f for f in self.folders(system=True) if f.entryid == key or f.name == key]
+        matches = [f for f in self.folders(system=True, recurse=recurse) if f.entryid == key or f.name == key]
         if len(matches) == 0:
             raise ZarafaNotFoundException("no such folder: '%s'" % key)
         elif len(matches) > 1:
             raise ZarafaNotFoundException("multiple folders with name/entryid '%s'" % key)
         else:
             return matches[0]
+
+    def get_folder(self, key):
+        """ Return :class:`folder <Folder>` with given name/entryid or *None* if not found """
+
+        try:
+            return self.folder(key)
+        except ZarafaException:
+            pass
 
     def folders(self, recurse=True, system=False, mail=False, parse=True): # XXX mail flag semantic difference?
         """ Return all :class:`folders <Folder>` in store
@@ -1093,19 +1101,30 @@ class Folder(object):
     def move(self, items, folder):
         self.copy(items, folder, _delete=True)
 
-    def folder(self, key): # XXX sloowowowww, see also Store.folder
+    def folder(self, key, recurse=True, create=False): # XXX sloowowowww, see also Store.folder
         """ Return :class:`Folder` with given name or entryid; raise exception if not found
 
             :param key: name or entryid
         """
 
-        matches = [f for f in self.folders() if f.entryid == key or f.name == key]
+        matches = [f for f in self.folders(recurse=recurse) if f.entryid == key or f.name == key]
         if len(matches) == 0:
-            raise ZarafaNotFoundException("no such folder: '%s'" % key)
+            if create:
+                return self.create_folder(key) # XXX assuming no entryid..
+            else:
+                raise ZarafaNotFoundException("no such folder: '%s'" % key)
         elif len(matches) > 1:
             raise ZarafaNotFoundException("multiple folders with name/entryid '%s'" % key)
         else:
             return matches[0]
+
+    def get_folder(self, key):
+        """ Return :class:`folder <Folder>` with given name/entryid or *None* if not found """
+
+        try:
+            return self.folder(key)
+        except ZarafaException:
+            pass
 
     def folders(self, recurse=True, depth=0):
         """ Return all :class:`sub-folders <Folder>` in folder
@@ -1133,7 +1152,7 @@ class Folder(object):
                         yield subfolder
 
     def create_folder(self, name):
-        mapifolder = self.mapiobj.CreateFolder(FOLDER_GENERIC, name, '', None, 0)
+        mapifolder = self.mapiobj.CreateFolder(FOLDER_GENERIC, unicode(name), u'', None, MAPI_UNICODE)
         return Folder(self.store, HrGetOneProp(mapifolder, PR_ENTRYID).Value)
 
     def prop(self, proptag):
