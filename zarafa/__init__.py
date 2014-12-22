@@ -460,7 +460,7 @@ Looks at command-line to see if another server address or other related options 
     def user(self, name):
         """ Return :class:`user <User>` with given name; raise exception if not found """
 
-        return User(self, name)
+        return User(name, self)
 
     def get_user(self, name):
         """ Return :class:`user <User>` with given name or *None* if not found """
@@ -479,7 +479,7 @@ Looks at command-line to see if another server address or other related options 
 
         if parse and getattr(self.options, 'users', None):
             for username in self.options.users:
-                yield User(self, username)
+                yield User(username, self)
             return
         try:
             for name in self._companylist():
@@ -487,7 +487,7 @@ Looks at command-line to see if another server address or other related options 
                     yield user
         except MAPIErrorNoSupport:
             for username in AddressBook.GetUserList(self.mapisession, None, MAPI_UNICODE):
-                user = User(self, username)
+                user = User(username, self)
                 if system or username != u'SYSTEM':
                     if remote or user._ecuser.Servername in (self.name, ''):
                         yield user
@@ -699,7 +699,7 @@ class Company(object):
         name = unicode(name)
         for user in self.users():
             if user.name == name:
-                return User(self.server, name)
+                return User(name, self.server)
 
     def get_user(self, name):
         """ Return :class:`user <User>` with given name or *None* if not found """
@@ -714,7 +714,7 @@ class Company(object):
 
         for username in AddressBook.GetUserList(self.server.mapisession, self._name if self._name != u'Default' else None, MAPI_UNICODE): # XXX serviceadmin?
             if username != 'SYSTEM':
-                yield User(self.server, username)
+                yield User(username, self.server)
 
     def create_user(self, name, password=None):
         self.server.create_user(name, password=password, company=self._name)
@@ -838,7 +838,7 @@ class Store(object):
 
         try:
             userid = HrGetOneProp(self.mapiobj, PR_MAILBOX_OWNER_ENTRYID).Value
-            return User(self.server, self.server.sa.GetUser(userid, MAPI_UNICODE).Username)
+            return User(self.server.sa.GetUser(userid, MAPI_UNICODE).Username, self.server)
         except MAPIErrorNotFound:
             pass
 
@@ -1654,7 +1654,9 @@ class Attachment(object):
 class User(object):
     """ User class """
 
-    def __init__(self, server, name):
+    def __init__(self, server=None, name=None):
+        if isinstance(server, (str, unicode)): # XXX change args, generalize for other classes
+            name, server = server, Server()
         self._name = name = unicode(name)
         self.server = server
         try:
