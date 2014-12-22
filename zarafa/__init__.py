@@ -289,7 +289,9 @@ class Table(object):
         if columns:
             mapitable.SetColumns(columns, 0)
         else:
-            mapitable.SetColumns(mapitable.QueryColumns(TBL_ALL_COLUMNS), 0) # some columns are hidden by default
+            cols = mapitable.QueryColumns(TBL_ALL_COLUMNS) # some columns are hidden by default XXX result (if at all) depends on table implementation 
+            cols = cols or mapitable.QueryColumns(0) # fall-back 
+            mapitable.SetColumns(cols, 0)
 
     @property
     def header(self):
