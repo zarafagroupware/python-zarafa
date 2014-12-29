@@ -1779,6 +1779,11 @@ class User(object):
 
         return Quota(self.server, self._ecuser.UserID)
 
+    @property
+    def outofoffice(self):
+        ''' User out of office status '''
+        return self.store.prop(PR_EC_OUTOFOFFICE).value
+
     def __unicode__(self):
         return u'User(%s)' % self._name
 
