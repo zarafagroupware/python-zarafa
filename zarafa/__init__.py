@@ -48,6 +48,7 @@ from __future__ import with_statement
 
 
 import contextlib
+import cPickle as pickle
 import csv
 try:
     import daemon.pidlockfile
@@ -1034,8 +1035,8 @@ class Folder(object):
                 item.mapiobj = _openentry_raw(self.store.mapiobj, PpropFindProp(row, PR_ENTRYID).Value, MAPI_MODIFY)
                 yield item
 
-    def create_item(self, eml=None, ics=None, vcf=None, **kwargs): # XXX associated
-        item = Item(self, eml=eml, ics=ics, vcf=vcf, create=True)
+    def create_item(self, eml=None, ics=None, vcf=None, load=None, loads=None, **kwargs): # XXX associated
+        item = Item(self, eml=eml, ics=ics, vcf=vcf, load=load, loads=loads, create=True)
         item.server = self.server
         for key, val in kwargs.items():
             setattr(item, key, val)
@@ -1230,7 +1231,7 @@ class Folder(object):
 class Item(object):
     """ Item """
 
-    def __init__(self, folder=None, eml=None, ics=None, vcf=None, create=False):
+    def __init__(self, folder=None, eml=None, ics=None, vcf=None, load=None, loads=None, create=False):
         # TODO: self.folder fix this!
         self.emlfile = eml
         self._folder = folder
@@ -1270,6 +1271,11 @@ class Item(object):
                     SPropValue(0x80D81003, [0]), SPropValue(0x80D90003, 1), 
                     SPropValue(PR_MESSAGE_CLASS, 'IPM.Contact'),
                 ])
+
+            elif load is not None:
+                self.load(load)
+            elif loads is not None:
+                self.loads(loads)
 
             else:
                 try:
@@ -1496,7 +1502,43 @@ class Item(object):
                 SPropValue(PR_ENTRYID, ab.CreateOneOff(addr.name or u'nobody', u'SMTP', unicode(addr.email), MAPI_UNICODE)),
             ])
         self.mapiobj.ModifyRecipients(0, names)
-        self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
+        self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE) # XXX needed?
+
+    def _dump(self):
+        d = {}
+        props = []
+        for prop in self.props():
+            if prop.id_ >= 0x8000:
+                props.append((prop.proptag, prop.mapi_value, self.mapiobj.GetNamesFromIDs([prop.proptag], None, 0)[0]))
+            else:
+                props.append((prop.proptag, prop.mapi_value, None))
+        d['props'] =  props
+        d['recipients'] = [[(prop.proptag, prop.mapi_value) for prop in row] for row in self.table(PR_MESSAGE_RECIPIENTS)]
+        d['attachments'] = []
+        return d
+
+    def dump(self, f):
+        pickle.dump(self._dump(), f)
+
+    def dumps(self):
+        return pickle.dumps(self._dump())
+
+    def _load(self, d):
+        props = []
+        for proptag, value, nameid in d['props']:
+            if nameid is not None:
+                proptag = self.mapiobj.GetIDsFromNames([nameid], MAPI_CREATE)[0] | (proptag & 0xffff)
+            props.append(SPropValue(proptag, value))
+        self.mapiobj.SetProps(props)
+        recipients = [[SPropValue(proptag, value) for (proptag, value) in row] for row in d['recipients']]
+        self.mapiobj.ModifyRecipients(0, recipients)
+        self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE) # XXX needed?
+
+    def load(self, f):
+        self._load(pickle.load(f))
+
+    def loads(self, s):
+        self._load(pickle.loads(s))
 
     def __unicode__(self):
         return u'Item(%s)' % self.subject
