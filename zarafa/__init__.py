@@ -34,6 +34,8 @@ Main classes:
 
 :class:`Address`
 
+:class:`Outofoffice`
+
 :class:`Quota`
 
 :class:`Config`
@@ -949,6 +951,13 @@ class Store(object):
         """ Return :datetime of the last logoff of a user on this store """
         return self.prop(PR_LAST_LOGOFF_TIME).value or None
 
+    @property
+    def outofoffice(self):
+        """ Store :class:`Outofoffice` """
+
+        # FIXME: If store is public store, return None?
+        return Outofoffice(self)
+
     def prop(self, proptag):
         return _prop(self, self.mapiobj, proptag)
 
@@ -1592,6 +1601,63 @@ class Body:
     def __repr__(self):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
 
+class Outofoffice(object):
+    """
+    Outofoffice class
+
+    Class which contains a :class:`store <Store>` out of office properties and
+    can set out-of-office status, message and subject.
+
+    :store store: :class:`store <Store>`
+    """
+    def __init__(self, store=None):
+        self.store = store
+
+    @property
+    def enabled(self):
+        """ Out of office enabled status """
+
+        try:
+            return self.store.prop(PR_EC_OUTOFOFFICE).value
+        except MAPIErrorNotFound:
+            return None
+
+    @enabled.setter
+    def enabled(self, value):
+        self.store.mapiobj.SetProps([SPropValue(PR_EC_OUTOFOFFICE, value)])
+
+    @property
+    def subject(self):
+        """ Subject """
+
+        try:
+            return self.store.prop(PR_EC_OUTOFOFFICE_SUBJECT).value
+        except MAPIErrorNotFound:
+            return None
+
+    @subject.setter
+    def subject(self, value):
+        self.store.mapiobj.SetProps([SPropValue(PR_EC_OUTOFOFFICE_SUBJECT, value)])
+
+    @property
+    def message(self):
+        """ Message """
+
+        try:
+            return self.store.prop(PR_EC_OUTOFOFFICE_MSG).value
+        except MAPIErrorNotFound:
+            return None
+
+    @message.setter
+    def message(self, value):
+        self.store.mapiobj.SetProps([SPropValue(PR_EC_OUTOFOFFICE_MSG, value)])
+
+    def __unicode__(self):
+        return u'Outofoffice(%s)' % self.subject
+
+    def __repr__(self):
+        return unicode(self).encode(sys.stdout.encoding or 'utf8')
+
 class Address:
     """ Address """
 
@@ -1823,8 +1889,9 @@ class User(object):
 
     @property
     def outofoffice(self):
-        ''' User out of office status '''
-        return self.store.prop(PR_EC_OUTOFOFFICE).value
+        """ User :class:`Outofoffice` """
+
+        return self.store.outofoffice
 
     def __unicode__(self):
         return u'User(%s)' % self._name

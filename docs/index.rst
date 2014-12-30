@@ -46,6 +46,18 @@ Module contents
       :members:
       :member-order: bysource
 
+   .. autoclass:: Outofoffice()
+      :members:
+      :member-order: bysource
+
+   .. autoclass:: Outofoffice()
+      :members:
+      :member-order: bysource
+
+   .. autoclass:: Outofoffice()
+      :members:
+      :member-order: bysource
+
    .. autoclass:: Quota()
       :members:
       :member-order: bysource
