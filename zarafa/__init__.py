@@ -1775,7 +1775,7 @@ class Attachment(object):
 class User(object):
     """ User class """
 
-    def __init__(self, server=None, name=None):
+    def __init__(self, name=None, server=None):
         if isinstance(server, (str, unicode)): # XXX change args, generalize for other classes
             name, server = server, Server()
         self._name = name = unicode(name)
