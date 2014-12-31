@@ -1624,7 +1624,7 @@ class Outofoffice(object):
 
     @enabled.setter
     def enabled(self, value):
-        self.store.mapiobj.SetProps([SPropValue(PR_EC_OUTOFOFFICE, value)])
+        self._update(enabled=value)
 
     @property
     def subject(self):
@@ -1637,7 +1637,7 @@ class Outofoffice(object):
 
     @subject.setter
     def subject(self, value):
-        self.store.mapiobj.SetProps([SPropValue(PR_EC_OUTOFOFFICE_SUBJECT, value)])
+        self._update(subject=unicode(value))
 
     @property
     def message(self):
@@ -1650,13 +1650,24 @@ class Outofoffice(object):
 
     @message.setter
     def message(self, value):
-        self.store.mapiobj.SetProps([SPropValue(PR_EC_OUTOFOFFICE_MSG, value)])
+        self._update(message=unicode(value))
 
     def __unicode__(self):
         return u'Outofoffice(%s)' % self.subject
 
     def __repr__(self):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
+
+    def _update(self, **kwargs):
+        """ Update out of office information using arguments"""
+
+        # TODO: expose _update as update() to easily update all outofoffice info
+        message = kwargs.get('message', self.message)
+        subject = kwargs.get('subject', self.subject)
+        enabled = kwargs.get('enabled', self.enabled)
+        # TODO: iterate over kwargs and only update the necessary pairs?
+        self.store.mapiobj.SetProps([SPropValue(PR_EC_OUTOFOFFICE_MSG, message), SPropValue(PR_EC_OUTOFOFFICE, enabled),
+            SPropValue(PR_EC_OUTOFOFFICE_SUBJECT, subject)])
 
 class Address:
     """ Address """
