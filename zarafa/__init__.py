@@ -953,7 +953,7 @@ class Store(object):
 
     @property
     def outofoffice(self):
-        """ Store :class:`Outofoffice` """
+        """ Return :class:`Outofoffice` """
 
         # FIXME: If store is public store, return None?
         return Outofoffice(self)
@@ -1608,9 +1608,9 @@ class Outofoffice(object):
     Class which contains a :class:`store <Store>` out of office properties and
     can set out-of-office status, message and subject.
 
-    :store store: :class:`store <Store>`
+    :param store: :class:`store <Store>`
     """
-    def __init__(self, store=None):
+    def __init__(self, store):
         self.store = store
 
     @property
@@ -1775,9 +1775,8 @@ class Attachment(object):
 class User(object):
     """ User class """
 
-    def __init__(self, name=None, server=None):
-        if isinstance(server, (str, unicode)): # XXX change args, generalize for other classes
-            name, server = server, Server()
+    def __init__(self, name, server=None):
+        server = server or Server()
         self._name = name = unicode(name)
         self.server = server
         try:
@@ -1929,6 +1928,8 @@ class User(object):
 
         return self
 
+    def __getattr__(self, x):
+        return getattr(self.store, x)
 
 class Quota(object):
     """ Quota """
