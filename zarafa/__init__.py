@@ -1927,7 +1927,12 @@ class User(object):
         return getattr(self.store, x)
 
 class Quota(object):
-    """ Quota """
+    """
+    Quota class
+
+    Quota limits are stored in bytes.
+
+    """
 
     def __init__(self, server, userid):
         self.server = server
@@ -1939,11 +1944,16 @@ class Quota(object):
             self._soft_limit = quota.llSoftSize
             self._hard_limit = quota.llHardSize
 
+
     @property
     def warning_limit(self):
         """ Warning limit """
 
         return self._warning_limit
+
+    @warning_limit.setter
+    def warning_limit(self, value):
+        self._update(warning_limit=value)
 
     @property
     def soft_limit(self):
@@ -1951,11 +1961,36 @@ class Quota(object):
 
         return self._soft_limit
 
+    @soft_limit.setter
+    def soft_limit(self, value):
+        self._update(soft_limit=value)
+
     @property
     def hard_limit(self):
         """ Hard limit """
 
         return self._hard_limit
+
+    @hard_limit.setter
+    def hard_limit(self, value):
+        self._update(hard_limit=value)
+
+
+    def _update(self, **kwargs):
+        """
+        Update function for Quota limits, currently supports the
+        following kwargs: `warning_limit`, `soft_limit` and `hard_limit`.
+
+        TODO: support defaultQuota and IsuserDefaultQuota
+        """
+
+        warning = kwargs.get('warning_limit', self._warning_limit)
+        soft = kwargs.get('soft_limit', self._soft_limit)
+        hard = kwargs.get('hard_limit', self._hard_limit)
+        # TODO: implement setting defaultQuota, userdefaultQuota
+        # (self, bUseDefaultQuota, bIsUserDefaultQuota, llWarnSize, llSoftSize, llHardSize)
+        quota = ECQUOTA(False, False, warning, soft, hard)
+        self.server.sa.SetQuota(self.userid, quota)
 
     @property
     def recipients(self):
