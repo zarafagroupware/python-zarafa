@@ -834,7 +834,7 @@ class Store(object):
     @property
     def subtree(self):
         """ :class:`Folder` designated as IPM.Subtree """
-        # TODO: doesn't work, needs to be swigged
+
         return Folder(self, HrGetOneProp(self.mapiobj, PR_IPM_SUBTREE_ENTRYID).Value)
 
     @property
