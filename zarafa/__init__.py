@@ -129,8 +129,7 @@ EID_EVERYONE = DEFINE_ABEID(MAPI_DISTLIST, 1)
 
 def _prop(self, mapiobj, proptag):
     if isinstance(proptag, (int, long)):
-        mapiprop = HrGetOneProp(mapiobj, proptag)
-        return Property(mapiobj, proptag, mapiprop.Value, PROP_TYPE(proptag))
+        return Property(mapiobj, HrGetOneProp(mapiobj, proptag))
     else:
         namespace, name = proptag.split(':')
         for prop in self.props(namespace=namespace): # XXX megh
@@ -138,13 +137,10 @@ def _prop(self, mapiobj, proptag):
                 return prop
 
 def _props(mapiobj, namespace=None):
-    result = []
     proptags = mapiobj.GetPropList(MAPI_UNICODE)
-    props = mapiobj.GetProps(proptags, MAPI_UNICODE)
-    result = [(prop.ulPropTag, prop.Value, PROP_TYPE(prop.ulPropTag)) for prop in props]
-    result.sort()
-    props1 =[Property(mapiobj, b, c, d) for (b, c, d) in result]
-    return [p for p in props1 if not namespace or p.namespace == namespace]
+    sprops = mapiobj.GetProps(proptags, MAPI_UNICODE)
+    props = [Property(mapiobj, sprop) for sprop in sprops]
+    return [p for p in sorted(props) if not namespace or p.namespace == namespace]
 
 def _state(mapiobj, associated=False):
     exporter = mapiobj.OpenProperty(PR_CONTENTS_SYNCHRONIZER, IID_IExchangeExportChanges, 0, 0)
@@ -218,15 +214,15 @@ Wrapper around MAPI properties
 
 """
 
-    def __init__(self, mapiobj, proptag, value, proptype): # XXX rethink attributes, names.. add guidname..?
-        self.mapiobj = mapiobj
-        self.proptag = proptag
+    def __init__(self, parent_mapiobj, mapiobj): # XXX rethink attributes, names.. add guidname..?
+        self._parent_mapiobj = parent_mapiobj
+        self.mapiobj = mapiobj # SPropValue
 
-        self.id_ = proptag >> 16
-        self.idname = REV_TAG.get(proptag)
-        self.type_ = proptype
-        self.typename = REV_TYPE.get(proptype)
-
+        self.proptag = mapiobj.ulPropTag
+        self.id_ = self.proptag >> 16
+        self.idname = REV_TAG.get(self.proptag) # XXX slow, often unused: make into properties?
+        self.type_ = PROP_TYPE(self.proptag)
+        self.typename = REV_TYPE.get(self.type_)
         self.named = (self.id_ >= 0x8000)
         self.kind = None
         self.kindname = None
@@ -234,15 +230,14 @@ Wrapper around MAPI properties
         self.name = None
         self.namespace = None
 
-        self.mapi_value = value # XXX mapiobj?
-        if proptype == PT_SYSTIME: # XXX generalize
-            self._value = datetime.datetime.utcfromtimestamp(value.unixtime)
+        if self.type_ == PT_SYSTIME: # XXX generalize, property
+            self._value = datetime.datetime.utcfromtimestamp(self.mapiobj.Value.unixtime)
         else:
-            self._value = value
+            self._value = self.mapiobj.Value
 
         if self.named:
             try:
-                lpname = mapiobj.GetNamesFromIDs([proptag], None, 0)[0]
+                lpname = self._parent_mapiobj.GetNamesFromIDs([self.proptag], None, 0)[0]
                 self.guid = bin2hex(lpname.guid)
                 self.namespace = GUID_NAMESPACE.get(lpname.guid)
                 self.name = lpname.id
@@ -256,8 +251,8 @@ Wrapper around MAPI properties
 
     def set_value(self, value):
         self._value = value
-        self.mapiobj.SetProps([SPropValue(self.proptag, value)])
-        self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
+        self._parent_mapiobj.SetProps([SPropValue(self.proptag, value)])
+        self._parent_mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
     value = property(get_value, set_value)
 
     def strval(self, sep=','):
@@ -271,6 +266,9 @@ Wrapper around MAPI properties
             else:
                 return unicode(v).encode('utf-8')
         return flatten(self._value)
+
+    def __lt__(self, prop):
+        return self.proptag < prop.proptag
 
     def __unicode__(self):
         return u'Property(%s, %s)' % (self.name if self.named else self.idname, repr(self._value))
@@ -303,7 +301,7 @@ class Table(object):
     def rows(self): # XXX custom Row class, with dict-like access? namedtuple?
         try:
             for row in self.mapitable.QueryRows(-1, 0):
-                yield [Property(self.server.mapistore, c.ulPropTag, c.Value, PROP_TYPE(c.ulPropTag)) for c in row]
+                yield [Property(self.server.mapistore, c) for c in row]
         except MAPIErrorNotFound:
             pass
 
