@@ -1049,18 +1049,20 @@ class Folder(object):
             setattr(item, key, val)
         return item
 
-    def empty(self, subfolder=True, associated=False):
-        """ Deletes all messages and subfolders from a folder without deleting the folder itself.
-            When subfolder=False is specified, it does not remove subfolders, but only emtpies the fodler itself
+    def empty(self, recurse=True, associated=False):
+        """ Delete folder contents
+
+        :param recurse: delete subfolders
+        :param associated: delete associated contents
         """
-        # DEL_ASSOCIATED | DELETE_HARD_DELETE
-        flags = 0
-        if associated:
-            flags = DEL_ASSOCIATED
-        if subfolder:
+
+        if recurse:
+            flags = DELETE_HARD_DELETE
+            if associated:
+                flags |= DEL_ASSOCIATED
             self.mapiobj.EmptyFolder(0, None, flags)
         else:
-            self.delete(self.items()) # XXX slow
+            self.delete(self.items()) # XXX look at associated flag! probably also quite slow
 
     @property
     def size(self): # XXX bit slow perhaps? :P
