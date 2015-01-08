@@ -1873,9 +1873,9 @@ class User(object):
         return self._ecuser.Servername
 
     @property
-    def archive_servers(self):
+    def archive_server(self):
         try:
-            return HrGetOneProp(self.mapiobj, PR_EC_ARCHIVE_SERVERS).Value
+            return HrGetOneProp(self.mapiobj, PR_EC_ARCHIVE_SERVERS).Value[0]
         except MAPIErrorNotFound:
             return
 
