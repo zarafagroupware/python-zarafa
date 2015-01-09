@@ -1894,7 +1894,7 @@ class User(object):
 
     @property
     def outofoffice(self):
-        """ User :class:`Outofoffice` """
+       """ User :class:`Outofoffice` """
 
         return self.store.outofoffice
 
@@ -1949,11 +1949,11 @@ class Quota(object):
     def warning_limit(self):
         """ Warning limit """
 
-        return self._warning_limit
+        return self.warning_limit
 
     @warning_limit.setter
     def warning_limit(self, value):
-        self._update(warning_limit=value)
+        self.update(warning_limit=value)
 
     @property
     def soft_limit(self):
@@ -1963,7 +1963,7 @@ class Quota(object):
 
     @soft_limit.setter
     def soft_limit(self, value):
-        self._update(soft_limit=value)
+        self.update(soft_limit=value)
 
     @property
     def hard_limit(self):
@@ -1976,7 +1976,7 @@ class Quota(object):
         self._update(hard_limit=value)
 
 
-    def _update(self, **kwargs):
+    def update(self, **kwargs):
         """
         Update function for Quota limits, currently supports the
         following kwargs: `warning_limit`, `soft_limit` and `hard_limit`.
