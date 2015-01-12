@@ -1944,7 +1944,6 @@ class Quota(object):
             self._soft_limit = quota.llSoftSize
             self._hard_limit = quota.llHardSize
 
-
     @property
     def warning_limit(self):
         """ Warning limit """
@@ -1984,12 +1983,12 @@ class Quota(object):
         TODO: support defaultQuota and IsuserDefaultQuota
         """
 
-        warning = kwargs.get('warning_limit', self._warning_limit)
-        soft = kwargs.get('soft_limit', self._soft_limit)
-        hard = kwargs.get('hard_limit', self._hard_limit)
+        self._warning_limit = kwargs.get('warning_limit', self._warning_limit)
+        self._soft_limit = kwargs.get('soft_limit', self._soft_limit)
+        self._hard_limit = kwargs.get('hard_limit', self._hard_limit)
         # TODO: implement setting defaultQuota, userdefaultQuota
         # (self, bUseDefaultQuota, bIsUserDefaultQuota, llWarnSize, llSoftSize, llHardSize)
-        quota = ECQUOTA(False, False, warning, soft, hard)
+        quota = ECQUOTA(False, False, self._warning_limit, self._soft_limit, self._hard_limit)
         self.server.sa.SetQuota(self.userid, quota)
 
     @property
