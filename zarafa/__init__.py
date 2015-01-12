@@ -1896,7 +1896,7 @@ class User(object):
     def outofoffice(self):
        """ User :class:`Outofoffice` """
 
-        return self.store.outofoffice
+       return self.store.outofoffice
 
     def __unicode__(self):
         return u'User(%s)' % self._name
