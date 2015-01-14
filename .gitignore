@@ -1,4 +1,5 @@
 *.pyc
+*.orig
 __pycache__/
 
 # Ignore Distribution/packaging directory
