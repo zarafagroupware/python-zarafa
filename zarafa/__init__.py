@@ -1010,7 +1010,10 @@ class Folder(object):
         try:
             return HrGetOneProp(self.mapiobj, PR_DISPLAY_NAME_W).Value
         except MAPIErrorNotFound:
-            return u'ROOT'
+            if self.entryid == self.store.root.entryid: # Root folder's PR_DISPLAY_NAME_W is never set
+                return u'ROOT'
+            else:
+                return ''
 
     @name.setter
     def name(self, name):
