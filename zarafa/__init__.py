@@ -1502,10 +1502,17 @@ class Item(object):
     @to.setter
     def to(self, addrs):
         if isinstance(addrs, (str, unicode)):
-            addrs = [Address(email=s.strip()) for s in unicode(addrs).split(';')]
+            addrs2 = []
+            for addr in unicode(addrs).split(';'): # XXX use python email module here?
+                if '<' in addr:
+                    name = addr[:addr.find('<')].strip()
+                    email = addr[addr.find('<')+1:addr.find('>')].strip()
+                    addrs2.append(Address(name=name, email=email))
+                else:
+                    addrs2.append(Address(email=addr))
         ab = self.server.mapisession.OpenAddressBook(0, None, 0) # XXX
         names = []
-        for addr in addrs:
+        for addr in addrs2:
             names.append([
                 SPropValue(PR_RECIPIENT_TYPE, MAPI_TO), 
                 SPropValue(PR_DISPLAY_NAME_W, addr.name or u'nobody'), 
