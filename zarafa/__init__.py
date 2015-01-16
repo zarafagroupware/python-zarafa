@@ -1953,6 +1953,11 @@ class Quota(object):
             self._warning_limit = quota.llWarnSize
             self._soft_limit = quota.llSoftSize
             self._hard_limit = quota.llHardSize
+            # XXX: logical name for variable
+            # Use default quota set in /etc/zarafa/server.cfg
+            self._use_default_quota = quota.bUseDefaultQuota
+            # XXX: is this for multitendancy?
+            self._isuser_default_quota = quota.bIsUserDefaultQuota
 
     @property
     def warning_limit(self):
