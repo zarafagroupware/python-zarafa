@@ -47,7 +47,7 @@ for folder in user.store.folders(recurse=True):
 for item in user.store.inbox:
     print item.subject
     for attachment in item.attachments():
-	print attachment.filename, len(attachment.data)
+        print attachment.filename, len(attachment.data)
 
 # dive into MAPI if needed
 print user.props(), user.store.props()
