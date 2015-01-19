@@ -18,7 +18,7 @@ To install python-zarafa just simply run the following command.
     python setup.py install
 
 # Documentation
-To generate documentation just simply run the following command or visit the following [url](http://doc.zarafa.com/trunk/Python_Zarafa/).
+To generate documentation just simply run the following command or visit the [following url](http://doc.zarafa.com/trunk/Python_Zarafa/).
 
 ```bash
 cd doc
