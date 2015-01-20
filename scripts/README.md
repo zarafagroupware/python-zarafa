@@ -60,3 +60,11 @@ Imports ics (calendar) files into the specified users calendar.
 Example usage:
 
 python import\_ics.py -u username --file item.ics
+
+urwap.py
+========
+
+Simple MAPI console client
+Example usage:
+
+python urwap.py -U username -P password -s 'https://server.com:237/zarafa'
