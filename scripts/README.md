@@ -68,3 +68,14 @@ Simple MAPI console client
 Example usage:
 
 python urwap.py -U username -P password -s 'https://server.com:237/zarafa'
+
+rule.py
+=======
+
+Example of a client side rule using ICS.
+
+
+send.py
+=======
+
+Example of sending a simple email
