@@ -1973,7 +1973,7 @@ class Quota(object):
     def warning_limit(self):
         """ Warning limit """
 
-        return self.warning_limit
+        return self._warning_limit
 
     @warning_limit.setter
     def warning_limit(self, value):
