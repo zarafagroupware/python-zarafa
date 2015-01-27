@@ -630,6 +630,10 @@ Looks at command-line to see if another server address or other related options 
         self.sa.HookStore(ECSTORE_TYPE_PRIVATE, user.userid.decode('hex'), store.guid.decode('hex'))
         return store.guid
 
+    def sync_users(self):
+        # Flush user cache on the server
+        self.sa.SyncUsers(None)
+
     @property
     def public_store(self):
         """ public :class:`store <Store>` in single-company mode """
