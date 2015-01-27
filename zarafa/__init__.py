@@ -103,6 +103,12 @@ except NameError:
         if K.startswith('PR_'):
             REV_TAG[V] = K
 
+
+# Define this tags, because these are not defined in MAPI/Tags.py
+PR_EC_OUTOFOFFICE_SUBJECT           = PROP_TAG(PT_TSTRING,    PR_EC_BASE+0x62)
+PR_EC_OUTOFOFFICE_MSG               = PROP_TAG(PT_TSTRING,    PR_EC_BASE+0x61)
+PR_EC_OUTOFOFFICE                   = PROP_TAG(PT_BOOLEAN,    PR_EC_BASE+0x60)
+
 PS_INTERNET_HEADERS = DEFINE_OLEGUID(0x00020386, 0, 0)
 NAMED_PROPS_INTERNET_HEADERS = [MAPINAMEID(PS_INTERNET_HEADERS, MNID_STRING, u'x-original-to'),]
 
