@@ -1997,7 +1997,7 @@ class Quota(object):
 
     @hard_limit.setter
     def hard_limit(self, value):
-        self._update(hard_limit=value)
+        self.update(hard_limit=value)
 
     def update(self, **kwargs):
         """
