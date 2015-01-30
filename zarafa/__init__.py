@@ -1999,7 +1999,6 @@ class Quota(object):
     def hard_limit(self, value):
         self._update(hard_limit=value)
 
-
     def update(self, **kwargs):
         """
         Update function for Quota limits, currently supports the
@@ -2022,6 +2021,12 @@ class Quota(object):
             return [self.server.user(ecuser.Username) for ecuser in self.server.sa.GetQuotaRecipients(self.userid, 0)]
         else:
             return []
+
+    def __unicode__(self):
+        return u'Quota(warning=%s, soft=%s, hard=%s)' % (_bytes_to_human(self.warning_limit), _bytes_to_human(self.soft_limit), _bytes_to_human(self.hard_limit))
+
+    def __repr__(self):
+        return unicode(self).encode(sys.stdout.encoding or 'utf8')
 
 class TrackingContentsImporter(ECImportContentsChanges):
     def __init__(self, server, importer, log):
