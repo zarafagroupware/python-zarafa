@@ -79,3 +79,8 @@ send.py
 =======
 
 Example of sending a simple email
+
+set-out-of-office.py
+====================
+
+Example to show how to set Out of Office with python-zarafa
