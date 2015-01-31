@@ -1369,6 +1369,7 @@ class Item(object):
     @property
     def body(self):
         """ Item :class:`body <Body>` """
+
         return Body(self) # XXX return None if no body..?
 
     @body.setter
@@ -1399,12 +1400,30 @@ class Item(object):
     @property
     def folder(self):
         """ Parent :class:`Folder` of an item """
+
         if self._folder:
             return self._folder
         try:
             return Folder(self.store, HrGetOneProp(self.mapiobj, PR_PARENT_ENTRYID).Value)
         except MAPIErrorNotFound:
             pass
+
+    @property
+    def importance(self):
+        """ Importance """
+
+        # TODO: userfriendly repr of value
+        try:
+            return self.prop(PR_IMPORTANCE).value
+        except MAPIErrorNotFound:
+            pass
+
+    @importance.setter
+    def importance(self, value):
+        ''' Set importance '''
+
+        self.mapiobj.SetProps([SPropValue(PR_IMPORTANCE, value)])
+        self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
     def prop(self, proptag):
         return _prop(self, self.mapiobj, proptag)
