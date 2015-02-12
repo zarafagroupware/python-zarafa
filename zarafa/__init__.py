@@ -577,9 +577,7 @@ Looks at command-line to see if another server address or other related options 
         companyeid = self.sa.CreateCompany(ECCOMPANY(name, None), MAPI_UNICODE)
         return self.company(name)
 
-    def store(self, guid):
-        """ Return :class:`store <Store>` with given GUID; raise exception if not found """
-
+    def _store(self, guid):
         if len(guid) != 32:
             raise ZarafaException("invalid store id: '%s'" % guid)
         try:
@@ -590,8 +588,14 @@ Looks at command-line to see if another server address or other related options 
         table.SetColumns([PR_ENTRYID, PR_EC_STORETYPE], 0)
         table.Restrict(SPropertyRestriction(RELOP_EQ, PR_STORE_RECORD_KEY, SPropValue(PR_STORE_RECORD_KEY, storeid)), TBL_BATCH)
         for row in table.QueryRows(-1, 0):
-             return Store(self, self.mapisession.OpenMsgStore(0, row[0].Value, None, MDB_WRITE), row[1].Value == ECSTORE_TYPE_PUBLIC)
+            return self.mapisession.OpenMsgStore(0, row[0].Value, None, MDB_WRITE), (row[1].Value == ECSTORE_TYPE_PUBLIC) # XXX determine publicness later?
         raise ZarafaException("no such store: '%s'" % guid)
+
+    def store(self, guid):
+        """ Return :class:`store <Store>` with given GUID; raise exception if not found """
+
+        mapistore, public = self._store(guid)
+        return Store(self, mapistore, public)
 
     def get_store(self, guid):
         """ Return :class:`store <Store>` with given GUID or *None* if not found """
@@ -754,9 +758,12 @@ class Store(object):
     
     """
 
-    def __init__(self, server, mapistore, public=False):
+    def __init__(self, server, mapiobj=None, public=False): # XXX remove 'public' argument?
+        if isinstance(server, str): # XXX fix args
+            guid, server = server, Server()
+            mapiobj, public = server._store(guid)
         self.server = server
-        self.mapiobj = mapistore
+        self.mapiobj = mapiobj
         self.public = public
         self._root = self.mapiobj.OpenEntry(None, None, 0)
 
