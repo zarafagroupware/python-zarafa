@@ -1595,7 +1595,10 @@ class Item(object):
                 props.append((prop.proptag, prop.mapi_value, None))
         d['props'] =  props
         d['recipients'] = [[(prop.proptag, prop.mapi_value) for prop in row] for row in self.table(PR_MESSAGE_RECIPIENTS)]
-        d['attachments'] = []
+        d['attachments'] = [[(prop.proptag, prop.mapiobj.Value) for prop in row] for row in self.table(PR_MESSAGE_ATTACHMENTS)]
+        d['attach_data'] = {}
+        for att in self.attachments():
+            d['attach_data'][att.number] = att.data
         return d
 
     def dump(self, f):
@@ -1613,6 +1616,16 @@ class Item(object):
         self.mapiobj.SetProps(props)
         recipients = [[SPropValue(proptag, value) for (proptag, value) in row] for row in d['recipients']]
         self.mapiobj.ModifyRecipients(0, recipients)
+        attachments = [[SPropValue(proptag, value) for (proptag, value) in row] for row in d['attachments']]
+        for props in attachments:
+            (id_, attach) = self.mapiobj.CreateAttach(None, 0)
+            attach.SetProps(props)
+            if id_ in d['attach_data']: # XXX
+                data = d['attach_data'][id_] 
+                stream = attach.OpenProperty(PR_ATTACH_DATA_BIN, IID_IStream, 0, MAPI_MODIFY | MAPI_CREATE)
+                stream.Write(data)
+                stream.Commit(0)
+                attach.SaveChanges(KEEP_OPEN_READWRITE)
         self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE) # XXX needed?
 
     def load(self, f):
@@ -1777,6 +1790,10 @@ class Attachment(object):
     def __init__(self, att):
         self.att = att
         self._data = None
+
+    @property
+    def number(self):
+        return HrGetOneProp(self.att, PR_ATTACH_NUM).Value
 
     @property
     def mimetype(self):
