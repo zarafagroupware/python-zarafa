@@ -1052,7 +1052,11 @@ class Folder(object):
     def items(self):
         """ Return all :class:`items <Item>` in folder, reverse sorted on received date """
 
-        table = self.mapiobj.GetContentsTable(self.content_flag)
+        try:
+            table = self.mapiobj.GetContentsTable(self.content_flag)
+        except MAPIErrorNoSupport:
+            return
+
         table.SortTable(SSortOrderSet([SSort(PR_MESSAGE_DELIVERY_TIME, TABLE_SORT_DESCEND)], 0, 0), 0) # XXX configure
         while True:
             rows = table.QueryRows(50, 0)
@@ -1091,11 +1095,15 @@ class Folder(object):
     def size(self): # XXX bit slow perhaps? :P
         """ Folder size """
 
-        size = 0
-        table = self.mapiobj.GetContentsTable(self.content_flag)
+        try:
+            table = self.mapiobj.GetContentsTable(self.content_flag)
+        except MAPIErrorNoSupport:
+            return 0
+
         table.SetColumns([PR_MESSAGE_SIZE], 0)
         table.SeekRow(BOOKMARK_BEGINNING, 0)
         rows = table.QueryRows(-1, 0)
+        size = 0
         for row in rows:
             size += row[0].Value
         return size
@@ -1108,7 +1116,11 @@ class Folder(object):
 
         """
 
-        return self.mapiobj.GetContentsTable(self.content_flag).GetRowCount(0) # XXX PR_CONTENT_COUNT, PR_ASSOCIATED_CONTENT_COUNT
+        try:
+            return self.mapiobj.GetContentsTable(self.content_flag).GetRowCount(0) # XXX PR_CONTENT_COUNT, PR_ASSOCIATED_CONTENT_COUNT
+        except MAPIErrorNoSupport:
+            return 0
+
 
     def _get_entryids(self, items):
         if isinstance(items, (Item, Folder)):
