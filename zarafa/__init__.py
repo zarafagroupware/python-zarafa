@@ -1371,7 +1371,7 @@ class Item(object):
         try:
             return HrGetOneProp(self.mapiobj, PR_SUBJECT_W).Value
         except MAPIErrorNotFound:
-            pass
+            return u''
 
     @subject.setter
     def subject(self, x):
@@ -1629,7 +1629,7 @@ class Body:
                 data.append(blup)
             return ''.join(data).decode('utf-32le') # XXX under windows this be utf-16le or something
         except MAPIErrorNotFound:
-            pass
+            return u''
 
     @property
     def html(self): # XXX decode using PR_INTERNET_CPID
@@ -1646,7 +1646,7 @@ class Body:
                 data.append(blup)
             return ''.join(data) # XXX do we need to do something about encodings? 
         except MAPIErrorNotFound:
-            pass
+            return ''
 
     def __unicode__(self):
         return u'Body()'
@@ -1686,7 +1686,7 @@ class Outofoffice(object):
         try:
             return self.store.prop(PR_EC_OUTOFOFFICE_SUBJECT).value
         except MAPIErrorNotFound:
-            return None
+            return u''
 
     @subject.setter
     def subject(self, value):
@@ -1699,7 +1699,7 @@ class Outofoffice(object):
         try:
             return self.store.prop(PR_EC_OUTOFOFFICE_MSG).value
         except MAPIErrorNotFound:
-            return None
+            return u''
 
     @message.setter
     def message(self, value):
