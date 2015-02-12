@@ -674,7 +674,7 @@ Looks at command-line to see if another server address or other related options 
 class Company(object):
     """ Company class """
 
-    def __init__(self, server, name):
+    def __init__(self, server, name): # XXX Company(name)
         self._name = name = unicode(name)
         self.server = server
         if name != u'Default': # XXX
@@ -747,7 +747,7 @@ class Company(object):
             return Quota(self.server, self._eccompany.CompanyID)
 
     def __unicode__(self):
-        return u'Company(%s)' % self._name
+        return u"Company('%s')" % self._name
 
     def __repr__(self):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
@@ -986,7 +986,7 @@ class Store(object):
         return _props(self.mapiobj)
 
     def __unicode__(self):
-        return u'Store(%s)' % self.guid
+        return u"Store('%s')" % self.guid
 
     def __repr__(self):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
@@ -1971,7 +1971,7 @@ class User(object):
        return self.store.outofoffice
 
     def __unicode__(self):
-        return u'User(%s)' % self._name
+        return u"User('%s')" % self._name
 
     def __repr__(self):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
