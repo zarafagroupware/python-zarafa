@@ -84,3 +84,7 @@ set-out-of-office.py
 ====================
 
 Example to show how to set Out of Office with python-zarafa
+
+backup-smime-certs.py
+=====================
+Example to show how to backup smime certs as pkcs12 files
