@@ -767,6 +767,10 @@ class Store(object):
         return bin2hex(HrGetOneProp(self.mapiobj, PR_STORE_RECORD_KEY).Value)
 
     @property
+    def hierarchyid(self):
+        return HrGetOneProp(self.mapiobj, PR_EC_HIERARCHYID).Value
+
+    @property
     def root(self):
         """ :class:`Folder` designated as store root """
 
@@ -1012,8 +1016,12 @@ class Folder(object):
             return None
 
     @property
-    def folderid(self):
+    def hierarchyid(self):
         return HrGetOneProp(self.mapiobj, PR_EC_HIERARCHYID).Value
+
+    @property
+    def folderid(self): # XXX remove?
+        return self.hierarchyid
 
     @property
     def name(self):
@@ -1343,6 +1351,10 @@ class Item(object):
         """ Item entryid """
 
         return bin2hex(HrGetOneProp(self.mapiobj, PR_ENTRYID).Value)
+
+    @property
+    def hierarchyid(self):
+        return HrGetOneProp(self.mapiobj, PR_EC_HIERARCHYID).Value
 
     @property
     def sourcekey(self):
