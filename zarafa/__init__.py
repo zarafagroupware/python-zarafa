@@ -591,6 +591,10 @@ Looks at command-line to see if another server address or other related options 
             return self.mapisession.OpenMsgStore(0, row[0].Value, None, MDB_WRITE)
         raise ZarafaException("no such store: '%s'" % guid)
 
+    def groups(self):
+        for name in MAPI.Util.AddressBook.GetGroupList(self.mapisession, None, MAPI_UNICODE):
+            yield Group(name, self)
+
     def store(self, guid):
         """ Return :class:`store <Store>` with given GUID; raise exception if not found """
 
@@ -671,6 +675,27 @@ Looks at command-line to see if another server address or other related options 
     def __repr__(self):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
 
+class Group(object):
+    def __init__(self, name, server=None):
+        self.server = server or Server()
+        self.name = name
+
+    def users(self):
+        _ecgroup = self.server.sa.GetGroup(self.server.sa.ResolveGroupName(self.name, MAPI_UNICODE), MAPI_UNICODE)
+        for ecuser in self.server.sa.GetUserListOfGroup(_ecgroup.GroupID, MAPI_UNICODE):
+            if ecuser.Username == 'SYSTEM':
+                continue
+            try:
+                yield User(ecuser.Username, self.server)
+            except ZarafaException: # XXX everyone, groups are included as users..
+                pass
+
+    def __unicode__(self):
+        return u"Group('%s)" % self.name
+
+    def __repr__(self):
+        return unicode(self).encode(sys.stdout.encoding or 'utf8')
+
 class Company(object):
     """ Company class """
 
@@ -737,6 +762,14 @@ class Company(object):
     def create_user(self, name, password=None):
         self.server.create_user(name, password=password, company=self._name)
         return self.user('%s@%s' % (name, self._name))
+
+    def groups(self):
+        if self.name == u'Default': # XXX
+            for ecgroup in self.server.sa.GetGroupList(None, MAPI_UNICODE):
+                yield Group(ecgroup.Groupname, self)
+        else:
+            for ecgroup in self.server.sa.GetGroupList(self._eccompany.CompanyID, MAPI_UNICODE):
+                yield Group(ecgroup.Groupname, self)
 
     @property
     def quota(self):
@@ -1990,6 +2023,10 @@ class User(object):
        """ User :class:`Outofoffice` """
 
        return self.store.outofoffice
+
+    def groups(self):
+        for g in self.server.sa.GetGroupListOfUser(self._ecuser.UserID, MAPI_UNICODE):
+            yield Group(g.Groupname, self.server)
 
     def __unicode__(self):
         return u"User('%s')" % self._name
