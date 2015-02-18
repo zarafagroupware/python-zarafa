@@ -585,17 +585,16 @@ Looks at command-line to see if another server address or other related options 
         except:
             raise ZarafaException("invalid store id: '%s'" % guid)
         table = self.ems.GetMailboxTable(None, 0) # XXX merge with Store.__init__
-        table.SetColumns([PR_ENTRYID, PR_EC_STORETYPE], 0)
+        table.SetColumns([PR_ENTRYID], 0)
         table.Restrict(SPropertyRestriction(RELOP_EQ, PR_STORE_RECORD_KEY, SPropValue(PR_STORE_RECORD_KEY, storeid)), TBL_BATCH)
         for row in table.QueryRows(-1, 0):
-            return self.mapisession.OpenMsgStore(0, row[0].Value, None, MDB_WRITE), (row[1].Value == ECSTORE_TYPE_PUBLIC) # XXX determine publicness later?
+            return self.mapisession.OpenMsgStore(0, row[0].Value, None, MDB_WRITE)
         raise ZarafaException("no such store: '%s'" % guid)
 
     def store(self, guid):
         """ Return :class:`store <Store>` with given GUID; raise exception if not found """
 
-        mapistore, public = self._store(guid)
-        return Store(self, mapistore, public)
+        return Store(self, self._store(guid))
 
     def get_store(self, guid):
         """ Return :class:`store <Store>` with given GUID or *None* if not found """
@@ -614,16 +613,17 @@ Looks at command-line to see if another server address or other related options 
         """
 
         table = self.ems.GetMailboxTable(None, 0)
-        table.SetColumns([PR_DISPLAY_NAME_W, PR_ENTRYID, PR_EC_STORETYPE], 0)
+        table.SetColumns([PR_DISPLAY_NAME_W, PR_ENTRYID], 0)
         for row in table.QueryRows(100, 0):
-            store = Store(self, self.mapisession.OpenMsgStore(0, row[1].Value, None, MDB_WRITE), row[2].Value == ECSTORE_TYPE_PUBLIC)
+            store = Store(self, self.mapisession.OpenMsgStore(0, row[1].Value, None, MDB_WRITE))
             if system or store.public or (store.user and store.user.name != 'SYSTEM'):
                 yield store
 
     def create_store(self, public=False):
         if public:
             mapistore = self.sa.CreateStore(ECSTORE_TYPE_PUBLIC, EID_EVERYONE)
-            return Store(self, mapistore, True)
+            return Store(self, mapistore)
+        # XXX
 
     def unhook_store(self, user):
         store = user.store
@@ -697,10 +697,10 @@ class Company(object):
             pubstore = GetPublicStore(self.server.mapisession)
             if pubstore is None:
                 return None
-            return Store(self.server, pubstore, True)
+            return Store(self.server, pubstore)
         publicstoreid = self.server.ems.CreateStoreEntryID(None, self._name, MAPI_UNICODE)
         publicstore = self.server.mapisession.OpenMsgStore(0, publicstoreid, None, MDB_WRITE)
-        return Store(self.server, publicstore, True)
+        return Store(self.server, publicstore)
 
     def create_store(self, public=False):
         if public:
@@ -708,7 +708,8 @@ class Company(object):
                 mapistore = self.server.sa.CreateStore(ECSTORE_TYPE_PUBLIC, EID_EVERYONE)
             else:
                 mapistore = self.server.sa.CreateStore(ECSTORE_TYPE_PUBLIC, self._eccompany.CompanyID)
-            return Store(self.server, mapistore, True)
+            return Store(self.server, mapistore)
+        # XXX
 
     def user(self, name):
         """ Return :class:`user <User>` with given name; raise exception if not found """
@@ -758,14 +759,17 @@ class Store(object):
     
     """
 
-    def __init__(self, server, mapiobj=None, public=False): # XXX remove 'public' argument?
+    def __init__(self, server, mapiobj=None):
         if isinstance(server, str): # XXX fix args
             guid, server = server, Server()
-            mapiobj, public = server._store(guid)
+            mapiobj = server._store(guid)
         self.server = server
         self.mapiobj = mapiobj
-        self.public = public
         self._root = self.mapiobj.OpenEntry(None, None, 0)
+
+    @property
+    def public(self):
+        return self.prop(PR_MDB_PROVIDER).mapiobj.Value == ZARAFA_STORE_PUBLIC_GUID
 
     @property
     def guid(self):
@@ -2121,7 +2125,7 @@ class TrackingContentsImporter(ECImportContentsChanges):
                 mapistore = self.server.mapisession.OpenMsgStore(0, store_entryid, None, 0)
             item = Item()
             item.server = self.server
-            item.store = Store(self.server, mapistore) # XXX public arg? improve item constructor to do more
+            item.store = Store(self.server, mapistore)
             try:
                 item.mapiobj = _openentry_raw(mapistore, entryid.Value, 0)
                 item.folderid = PpropFindProp(props, PR_EC_PARENT_HIERARCHYID).Value
