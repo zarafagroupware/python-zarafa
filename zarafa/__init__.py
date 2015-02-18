@@ -374,6 +374,7 @@ Looks at command-line to see if another server address or other related options 
 
     def __init__(self, options=None, config=None, sslkey_file=None, sslkey_pass=None, server_socket=None, auth_user=None, auth_pass=None, log=None, service=None):
         self.log = log
+        self.service = service
         self.server_socket = self.sslkey_file = self.sslkey_pass = None
 
         # get cmd-line options
@@ -394,6 +395,7 @@ Looks at command-line to see if another server address or other related options 
                 config = globals()['Config'](None, filename=config_file) # XXX snarf
             except IOError:
                 pass
+        self.config = config
 
         # get defaults
         if os.getenv('ZARAFA_SOCKET'): # env variable used in testset
@@ -432,8 +434,12 @@ Looks at command-line to see if another server address or other related options 
         self.ems = self.mapistore.QueryInterface(IID_IExchangeManageStore)
         entryid = HrGetOneProp(self.mapistore, PR_STORE_ENTRYID).Value
         self.pseudo_url = entryid[entryid.find('pseudo:'):-1] # XXX ECSERVER
-        self.name = self.pseudo_url[9:]
+        self.name = self.pseudo_url[9:] # XXX get this kind of stuff from pr_ec_statstable_servers..?
         self._archive_sessions = {}
+
+    def nodes(self): # XXX delay mapi sessions until actually needed
+        for row in self.table(PR_EC_STATSTABLE_SERVERS).dict_rows():
+            yield Server(options=self.options, config=self.config, sslkey_file=self.sslkey_file, sslkey_pass=self.sslkey_pass, server_socket=row[PR_EC_STATS_SERVER_HTTPSURL], log=self.log, service=self.service)
 
     def table(self, name, restriction=None, order=None, columns=None):
         return Table(self, self.mapistore.OpenProperty(name, IID_IMAPITable, MAPI_UNICODE, 0), name, restriction=restriction, order=order, columns=columns)
