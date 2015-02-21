@@ -2357,7 +2357,6 @@ Available options:
     parser = optparse.OptionParser()
 
     if 'c' in options: parser.add_option('-c', '--config', dest='config_file', help='Load settings from FILE', metavar='FILE')
-    if 'w' in options: parser.add_option('-w', '--workers', dest='workers', help='Number of parallel worker processes')
 
     if 's' in options: parser.add_option('-s', '--server-socket', dest='server_socket', help='Connect to server SOCKET', metavar='SOCKET')
     if 'k' in options: parser.add_option('-k', '--ssl-key', dest='sslkey_file', help='SSL key file', metavar='FILE')
@@ -2373,6 +2372,8 @@ Available options:
     if 'm' in options: parser.add_option('-m', '--modify', dest='modify', action='store_true', help='Depending on program, enable database modification')
     if 'v' in options: parser.add_option('-v', '--verbose', dest='verbose', action='store_true', help='Depending on program, enable verbose output')
     if 'V' in options: parser.add_option('-V', '--version', dest='version', action='store_true', help='Show program version')
+
+    if 'w' in options: parser.add_option('-w', '--workers', dest='workers', help='Number of parallel worker processes', metavar='N', type='int')
 
     return parser
 
