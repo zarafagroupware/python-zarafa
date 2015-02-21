@@ -2357,6 +2357,7 @@ Available options:
     parser = optparse.OptionParser()
 
     if 'c' in options: parser.add_option('-c', '--config', dest='config_file', help='Load settings from FILE', metavar='FILE')
+    if 'w' in options: parser.add_option('-w', '--workers', dest='workers', help='Number of parallel worker processes')
 
     if 's' in options: parser.add_option('-s', '--server-socket', dest='server_socket', help='Connect to server SOCKET', metavar='SOCKET')
     if 'k' in options: parser.add_option('-k', '--ssl-key', dest='sslkey_file', help='SSL key file', metavar='FILE')
