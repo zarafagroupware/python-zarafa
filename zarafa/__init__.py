@@ -624,7 +624,7 @@ Looks at command-line to see if another server address or other related options 
 
         table = self.ems.GetMailboxTable(None, 0)
         table.SetColumns([PR_DISPLAY_NAME_W, PR_ENTRYID], 0)
-        for row in table.QueryRows(100, 0):
+        for row in table.QueryRows(-1, 0):
             store = Store(self, self.mapisession.OpenMsgStore(0, row[1].Value, None, MDB_WRITE))
             if system or store.public or (store.user and store.user.name != 'SYSTEM'):
                 yield store
