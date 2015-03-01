@@ -2183,7 +2183,8 @@ class TrackingContentsImporter(ECImportContentsChanges):
                 item.docid = props[0].Value
                 # item.folderid = props[1].Value # XXX 
                 item.storeid = bin2hex(props[2].Value)
-                self.importer.update(item, flags)
+                if hasattr(self.importer, 'update'):
+                    self.importer.update(item, flags)
             except (MAPIErrorNotFound, MAPIErrorNoAccess): # XXX, mail already deleted, can we do this in a cleaner way?
                 if self.log:
                     self.log.debug('received change for entryid %s, but it could not be opened' % bin2hex(entryid.Value))
@@ -2203,7 +2204,8 @@ class TrackingContentsImporter(ECImportContentsChanges):
                 item = Item()
                 item.server = self.server
                 item._sourcekey = bin2hex(entry)
-                self.importer.delete(item, flags)
+                if hasattr(self.importer, 'delete'):
+                    self.importer.delete(item, flags)
         except Exception, e:
             if self.log:
                 self.log.error('could not process delete for entries: %s' % [bin2hex(entry) for entry in entries])
