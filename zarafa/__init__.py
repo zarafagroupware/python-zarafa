@@ -1446,6 +1446,12 @@ class Item(object):
 
         return Body(self) # XXX return None if no body..?
 
+    @property
+    def size(self):
+        """ Item size """
+
+        return self.prop(PR_MESSAGE_SIZE).value
+
     @body.setter
     def body(self, x):
         self.mapiobj.SetProps([SPropValue(PR_BODY_W, unicode(x))])
