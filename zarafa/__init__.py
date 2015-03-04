@@ -1452,6 +1452,10 @@ class Item(object):
 
         return self.prop(PR_MESSAGE_SIZE).value
 
+    @property
+    def message_class(self):
+        return self.prop(PR_MESSAGE_CLASS).value
+
     @body.setter
     def body(self, x):
         self.mapiobj.SetProps([SPropValue(PR_BODY_W, unicode(x))])
