@@ -186,6 +186,7 @@ def _sync(server, syncobj, importer, state, log, max_changes, associated=False):
         except MAPIError, e:
             if log:
                 log.warn("Received a MAPI error or timeout (error=0x%x, retry=%d/5)" % (e.hr, retry))
+            time.sleep(5)
             if retry < 5:
                 retry += 1
             else:
