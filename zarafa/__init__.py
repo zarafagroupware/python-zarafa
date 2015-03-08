@@ -1554,11 +1554,28 @@ class Item(object):
     def eml(self):
         """ Return .eml version of item """
 
-        if not self.emlfile:
-            sopt = inetmapi.sending_options()
-            sopt.no_recipients_workaround = True
-            self.emlfile = inetmapi.IMToINet(self.store.server.mapisession, None, self.mapiobj, sopt)
-        return self.emlfile
+        if self.emlfile:
+            return self.emfile
+        else:
+            try:
+                self.prop(PR_EC_IMAP_EMAIL)
+            except MAPIErrorNotFound: # eml is not stored in PR_EC_IMAP_EMAIL
+                sopt = inetmapi.sending_options()
+                sopt.no_recipients_workaround = True
+                self.emlfile = inetmapi.IMToINet(self.store.server.mapisession, None, self.mapiobj, sopt)
+            except MAPIErrorNotEnoughMemory: # We need to stream the contents of PR_EC_IMAP_EMAIL, since it's larger then XX KB.
+                stream = self.mapiobj.OpenProperty(PR_EC_IMAP_EMAIL, IID_IStream, 0 ,0)
+                data = []
+                while True:
+                    blup = stream.Read(0xFFFFF) # 1 MB
+                    if len(blup) == 0:
+                        break
+                    data.append(blup)
+                self.emlfile = ''.join(data)
+            else: # PR_EC_IMAP_EMAIL property is cached
+                self.emlfile = self.prop(PR_EC_IMAP_EMAIL).value
+
+            return self.emlfile
 
     def vcf(self): # XXX don't we have this builtin somewhere? very basic for now
         import vobject
