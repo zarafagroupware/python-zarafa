@@ -1075,6 +1075,12 @@ class Folder(object):
         return self.hierarchyid
 
     @property
+    def subfolder_count(self):
+        ''' Number of direct subfolders '''
+
+        return self.prop(PR_FOLDER_CHILD_COUNT).value
+
+    @property
     def name(self):
         """ Folder name """
 
