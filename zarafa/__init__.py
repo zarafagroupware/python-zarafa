@@ -237,7 +237,7 @@ Wrapper around MAPI properties
         self.name = None
         self.namespace = None
 
-        if self.type_ == PT_SYSTIME: # XXX generalize, property
+        if self.type_ == PT_SYSTIME: # XXX generalize, property, timezones?
             self._value = datetime.datetime.utcfromtimestamp(self.mapiobj.Value.unixtime)
         else:
             self._value = self.mapiobj.Value
@@ -258,6 +258,8 @@ Wrapper around MAPI properties
 
     def set_value(self, value):
         self._value = value
+        if self.type_ == PT_SYSTIME:
+            value = MAPI.Time.unixtime(time.mktime(value.timetuple())) # XXX timezones?
         self._parent_mapiobj.SetProps([SPropValue(self.proptag, value)])
         self._parent_mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
     value = property(get_value, set_value)
