@@ -15,7 +15,6 @@ def opt_args():
 
 def prettyprinter(item, old_item=False, delete=False):
     # TODO: Intergrate this code in python-zarafa, aka make an Item printable?
-    biggest = max((len(str((prop.name) if prop.named else prop.idname)) for prop in item.props()))
 
     # Delete or new Item
     operation = '-' if delete else '+'
