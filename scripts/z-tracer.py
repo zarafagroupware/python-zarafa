@@ -5,40 +5,35 @@ so users can extract and parse it.
 '''
 import time
 import zarafa
+import sys
+import difflib
 from MAPI.Tags import *
 
 ITEM_MAPPING = {}
 
-def opt_args():
-    parser = zarafa.parser()
-    return parser.parse_args()
-
-def prettyprinter(item, old_item=False, delete=False):
-    # TODO: Intergrate this code in python-zarafa, aka make an Item printable?
-
-    # Delete or new Item
-    operation = '-' if delete else '+'
-    if old_item:
-        old_biggest =  max((len(str((prop.name) if prop.named else prop.idname)) for prop in old_item.props()))
+def proplist(item):
     biggest = max((len(str((prop.name) if prop.named else prop.idname)) for prop in item.props()))
-
+    props = []
     for prop in item.props():
-        # FIXME: some namedprops name's are numbers, so call str()
         idname = str(prop.name if prop.named else prop.idname)
         offset = biggest - len(idname or '')
+        props.append('%s %s%s\n' % (idname, ' ' * offset,  prop.strval()))
+    return props
 
-        # Updated item
-        if old_item:
-            for old_prop in old_item.props():
-                # FIXME: some namedprops are still None, we can't compare these
-                old_idname = str(old_prop.name if old_prop.named else old_prop.idname)
-                old_offset = old_biggest - len(old_idname or '')
+def prettyprinter(item, old_item=[], delete=False):
+    if delete:
+        oldprops = proplist(item)
+        newprops = []
+        new_name = ''
+        old_name = item.subject
+    else:
+        oldprops = proplist(old_item) if old_item else []
+        newprops = proplist(item)
+        new_name = item.subject
+        old_name = item.subject if old_item else ''
 
-                if old_idname == idname and prop.strval() != old_prop.strval() and prop.proptag == old_prop.proptag:
-                    print '- %s %s - %s' % (old_idname, ' ' * old_offset, old_prop.strval())
-                    print '+ %s %s - %s' % (idname, ' ' * offset, prop.strval())
-        else: # New or Delete item
-            print '%s %s %s - %s' % (operation, idname, '' * offset, prop.strval())
+    for line in difflib.unified_diff(oldprops, newprops, tofile=new_name, fromfile=old_name):
+        sys.stdout.write(line)
 
 class Importer:
     def update(self, item, flags):
@@ -56,12 +51,12 @@ class Importer:
         rm_item = ITEM_MAPPING[item.sourcekey]
         if rm_item:
             print '\033[1;41mBegin Delete: subject: %s folder: %s sender: %s \033[1;m' % (rm_item.subject, rm_item.folder, rm_item.sender.email)
-            prettyprinter(rm_item, False, True)
+            prettyprinter(rm_item, delete=True)
             print '\033[1;41mEnd Delete\033[1;m\n'
             del ITEM_MAPPING[rm_item.sourcekey]
 
 def main():
-    options, args = opt_args()
+    options, args = zarafa.parser().parse_args()
     server = zarafa.Server(options)
     # TODO: use optparse to figure this out?
     if not server.options.auth_user:
@@ -70,18 +65,16 @@ def main():
         print 'No folder specified'
     else:
         user = zarafa.Server().user(server.options.auth_user)
-        # TODO: support multiple folders with multiprocessing?
         folder = user.store.folders().next() # First Folder
 
         print 'Monitoring folder %s of %s for update and delete events' % (folder, user.fullname)
         # Create mapping
         for item in folder.items():
             ITEM_MAPPING[item.sourcekey] = item
-        print 'Memory mapping of items complete'
+        print 'Mapping of items and sourcekey complete'
 
         folder_state = folder.state
         new_state = folder.sync(Importer(), folder_state) # from last known state
-
         while True:
             new_state = folder.sync(Importer(), folder_state) # from last known state
             if new_state != folder_state:
