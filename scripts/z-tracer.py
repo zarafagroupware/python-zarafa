@@ -3,11 +3,10 @@
 Program which traces the ICS events of a user and displays the changed/new MAPI properties in a grep/sed/awk way
 so users can extract and parse it.
 '''
-import time
+import time, sys, difflib
+
+from MAPI.Tags import SYNC_NEW_MESSAGE
 import zarafa
-import sys
-import difflib
-from MAPI.Tags import *
 
 ITEM_MAPPING = {}
 
@@ -20,7 +19,7 @@ def proplist(item):
         props.append('%s %s%s\n' % (idname, ' ' * offset,  prop.strval()))
     return props
 
-def prettyprinter(item, old_item=[], delete=False):
+def diffitems(item, old_item=[], delete=False):
     if delete:
         oldprops = proplist(item)
         newprops = []
@@ -44,19 +43,19 @@ class Importer:
             ITEM_MAPPING[item.sourcekey] = item 
             old_item = False
 
-        prettyprinter(item, old_item)
+        diffitems(item, old_item)
         print '\033[1;41mEnd Update\033[1;m\n'
 
     def delete(self, item, flags): # only item.sourcekey is available here!
         rm_item = ITEM_MAPPING[item.sourcekey]
         if rm_item:
             print '\033[1;41mBegin Delete: subject: %s folder: %s sender: %s \033[1;m' % (rm_item.subject, rm_item.folder, rm_item.sender.email)
-            prettyprinter(rm_item, delete=True)
+            diffitems(rm_item, delete=True)
             print '\033[1;41mEnd Delete\033[1;m\n'
             del ITEM_MAPPING[rm_item.sourcekey]
 
 def main():
-    options, args = zarafa.parser().parse_args()
+    options, _ = zarafa.parser().parse_args()
     server = zarafa.Server(options)
     # TODO: use optparse to figure this out?
     if not server.options.auth_user:
@@ -66,11 +65,9 @@ def main():
     else:
         user = zarafa.Server().user(server.options.auth_user)
         folder = user.store.folders().next() # First Folder
-
         print 'Monitoring folder %s of %s for update and delete events' % (folder, user.fullname)
         # Create mapping
-        for item in folder.items():
-            ITEM_MAPPING[item.sourcekey] = item
+        [ITEM_MAPPING[item.sourcekey] = item for item in folder.items()]
         print 'Mapping of items and sourcekey complete'
 
         folder_state = folder.state
