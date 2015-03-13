@@ -238,7 +238,7 @@ Wrapper around MAPI properties
         self.namespace = None
 
         if self.type_ == PT_SYSTIME: # XXX generalize, property, timezones?
-            self._value = datetime.datetime.utcfromtimestamp(self.mapiobj.Value.unixtime)
+            self._value = datetime.datetime.fromtimestamp(self.mapiobj.Value.unixtime)
         else:
             self._value = self.mapiobj.Value
 
