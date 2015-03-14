@@ -2,6 +2,18 @@
 import zarafa
 from MAPI.Util import *
 
+'''
+TODO:
+* Add seperator between data and header
+* -d outputs ; seperated and not ,
+* --company throws an exception vs.
+[jelle@P9][~/projects/python-zarafa]%sudo zarafa-stats --company
+Unable to open requested statistics table
+* --top is missing
+* --session is implemented, but unusable even on 1920x1080, we somehow have to use less spacing
+
+'''
+
 def opt_args():
     parser = zarafa.parser('skpc')
     parser.add_option('--system', dest='system', action='store_true',  help='Gives information about threads, SQL and caches')
@@ -25,11 +37,15 @@ def main():
         table = PR_EC_STATSTABLE_SERVERS
     else:
         return
-    table = zarafa.Server(options).table(table)
-    if options.dump:
-        print table.csv()
-    else:
-        print table.text()
+    try:
+        table = zarafa.Server(options).table(table)
+        if options.dump:
+            print table.csv(delimiter=';')
+        else:
+            print table.text()
+    except MAPIErrorNotFound:
+        print 'Unable to open requested statistics table'
+
 
 if __name__ == '__main__':
     main()
