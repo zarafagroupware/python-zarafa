@@ -817,11 +817,11 @@ class Store(object):
     def guid(self):
         """ Store GUID """
 
-        return bin2hex(HrGetOneProp(self.mapiobj, PR_STORE_RECORD_KEY).Value)
+        return bin2hex(self.prop(PR_STORE_RECORD_KEY).value)
 
     @property
     def hierarchyid(self):
-        return HrGetOneProp(self.mapiobj, PR_EC_HIERARCHYID).Value
+        return  self.prop(PR_EC_HIERARCHYID).value
 
     @property
     def root(self):
@@ -999,7 +999,7 @@ class Store(object):
     def size(self):
         """ Store size """
 
-        return HrGetOneProp(self.mapiobj, PR_MESSAGE_SIZE_EXTENDED).Value
+        return self.prop(PR_MESSAGE_SIZE_EXTENDED).value
 
     def config_item(self, name):
         item = Item()
@@ -1070,7 +1070,7 @@ class Folder(object):
 
     @property
     def hierarchyid(self):
-        return HrGetOneProp(self.mapiobj, PR_EC_HIERARCHYID).Value
+        return self.prop(PR_EC_HIERARCHYID).value
 
     @property
     def folderid(self): # XXX remove?
@@ -1087,7 +1087,7 @@ class Folder(object):
         """ Folder name """
 
         try:
-            return HrGetOneProp(self.mapiobj, PR_DISPLAY_NAME_W).Value
+            return self.prop(PR_DISPLAY_NAME_W).value
         except MAPIErrorNotFound:
             if self.entryid == self.store.root.entryid: # Root folder's PR_DISPLAY_NAME_W is never set
                 return u'ROOT'
