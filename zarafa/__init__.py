@@ -71,6 +71,7 @@ import pwd
 import socket
 import sys
 import StringIO
+import struct
 import threading
 import traceback
 import mailbox
@@ -112,12 +113,19 @@ PR_EC_OUTOFOFFICE                   = PROP_TAG(PT_BOOLEAN,    PR_EC_BASE+0x60)
 PS_INTERNET_HEADERS = DEFINE_OLEGUID(0x00020386, 0, 0)
 NAMED_PROPS_INTERNET_HEADERS = [MAPINAMEID(PS_INTERNET_HEADERS, MNID_STRING, u'x-original-to'),]
 
-# XXX clean up and improve for common guids/namepaces
+# XXX from common/mapiguidext.h
 PSETID_Archive = DEFINE_GUID(0x72e98ebc, 0x57d2, 0x4ab5, 0xb0, 0xaa, 0xd5, 0x0a, 0x7b, 0x53, 0x1c, 0xb9)
+PSETID_Common = DEFINE_OLEGUID(0x00062008, 0, 0)
+PSETID_Appointment = DEFINE_OLEGUID(0x00062002, 0, 0)
+
 NAMED_PROPS_ARCHIVER = [MAPINAMEID(PSETID_Archive, MNID_STRING, u'store-entryids'), MAPINAMEID(PSETID_Archive, MNID_STRING, u'item-entryids'), MAPINAMEID(PSETID_Archive, MNID_STRING, u'stubbed'),]
 
-GUID_NAMESPACE = {PSETID_Archive: 'archive'}
-NAMESPACE_GUID = {'archive': PSETID_Archive}
+GUID_NAMESPACE = {
+    PSETID_Archive: 'archive',
+    PSETID_Common: 'common',
+    PSETID_Appointment: 'appointment',
+}
+NAMESPACE_GUID = dict((b,a) for (a,b) in GUID_NAMESPACE.items()) 
 
 # XXX copied from common/ECDefs.h
 def OBJECTCLASS(__type, __class):
@@ -137,10 +145,13 @@ def _prop(self, mapiobj, proptag):
     if isinstance(proptag, (int, long)):
         return Property(mapiobj, HrGetOneProp(mapiobj, proptag))
     else:
-        namespace, name = proptag.split(':')
-        for prop in self.props(namespace=namespace): # XXX megh
+        namespace, name = proptag.split(':') # XXX syntax
+        if name.isdigit(): # XXX
+            name = int(name)
+        for prop in self.props(namespace=namespace): # XXX sloow, streaming
             if prop.name == name:
                 return prop
+        raise MAPIErrorNotFound
 
 def _props(mapiobj, namespace=None):
     proptags = mapiobj.GetPropList(MAPI_UNICODE)
@@ -204,6 +215,21 @@ def _openentry_raw(mapistore, entryid, flags): # avoid underwater action for arc
         return mapistore.OpenEntry(entryid, IID_IECMessageRaw, flags)
     except MAPIErrorInterfaceNotSupported:
         return mapistore.OpenEntry(entryid, None, flags)
+
+def _unpack_short(s, pos):
+    return struct.unpack_from('<H', s, pos)[0]
+
+def _unpack_long(s, pos):
+    return struct.unpack_from('<L', s, pos)[0]
+
+def _pack_long(i):
+    return struct.pack('<L', i)
+
+def _rectime_to_unixtime(t):
+    return (t - 194074560) * 60
+
+def _unixtime_to_rectime(t):
+    return int(t/60) + 194074560
 
 class ZarafaException(Exception):
     pass
@@ -1633,6 +1659,18 @@ class Item(object):
     def to(self):
         return self.recipients() # XXX filter
 
+    @property 
+    def start(self): # XXX optimize, guid
+        return self.prop('common:34070').value
+
+    @property 
+    def end(self): # XXX optimize, guid
+        return self.prop('common:34071').value
+
+    @property
+    def recurrence(self):
+        return Recurrence(self)
+
     @to.setter
     def to(self, addrs):
         if isinstance(addrs, (str, unicode)):
@@ -1764,6 +1802,25 @@ class Body:
 
     def __repr__(self):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
+
+class Recurrence:
+    def __init__(self, item): # XXX just readable start/end for now
+        value = item.prop('appointment:33302').value # recurrencestate
+        SHORT, LONG = 2, 4
+        pos = 5 * SHORT + 3 * LONG
+        patterntype = _unpack_short(value, 3*SHORT)
+        if patterntype in (1, 2, 4, 10, 12):
+            pos += LONG
+        elif patterntype in (3, 11):
+            pos += 2*LONG
+        pos += 3 *LONG
+        delcount = _unpack_long(value, pos)
+        pos += LONG + delcount*LONG
+        modcount = _unpack_long(value, pos)
+        pos += LONG + modcount*LONG
+        self.start = datetime.datetime.fromtimestamp(_rectime_to_unixtime(_unpack_long(value, pos)))
+        pos += LONG
+        self.end = datetime.datetime.fromtimestamp(_rectime_to_unixtime(_unpack_long(value, pos)))
 
 class Outofoffice(object):
     """
