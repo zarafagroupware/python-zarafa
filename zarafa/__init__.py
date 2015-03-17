@@ -1125,6 +1125,27 @@ class Folder(object):
         self.mapiobj.SetProps([SPropValue(PR_DISPLAY_NAME_W, unicode(name))])
         self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
+    @property
+    def container_class(self):
+        '''
+        Property which describes the type of items a folder holds, possible values
+        * IPF.Appointment
+        * IPF.Contact
+        * IPF.Journal
+        * IPF.Note
+        * IPF.StickyNote
+        * IPF.Task
+
+        https://msdn.microsoft.com/en-us/library/aa125193(v=exchg.65).aspx
+        '''
+
+        return self.prop(PR_CONTAINER_CLASS).value
+
+    @container_class.setter
+    def container_class(self, value):
+        self.mapiobj.SetProps([SPropValue(PR_CONTAINER_CLASS, unicode(value))])
+        self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
+
     def item(self, entryid):
         """ Return :class:`Item` with given entryid; raise exception of not found """ # XXX better exception?
 
@@ -1283,7 +1304,7 @@ class Folder(object):
                     for subfolder in folder.folders(depth=depth+1):
                         yield subfolder
 
-    def create_folder(self, name):
+    def create_folder(self, name): # XXX: do we want to set some properties of the folder, for example PR_CONTAINER_CLASS?
         mapifolder = self.mapiobj.CreateFolder(FOLDER_GENERIC, unicode(name), u'', None, MAPI_UNICODE)
         return Folder(self.store, HrGetOneProp(mapifolder, PR_ENTRYID).Value)
 
