@@ -157,7 +157,9 @@ def _props(mapiobj, namespace=None):
     proptags = mapiobj.GetPropList(MAPI_UNICODE)
     sprops = mapiobj.GetProps(proptags, MAPI_UNICODE)
     props = [Property(mapiobj, sprop) for sprop in sprops]
-    return [p for p in sorted(props) if not namespace or p.namespace == namespace]
+    for p in sorted(props):
+        if not namespace or p.namespace == namespace:
+            yield p
 
 def _state(mapiobj, associated=False):
     exporter = mapiobj.OpenProperty(PR_CONTENTS_SYNCHRONIZER, IID_IExchangeExportChanges, 0, 0)
