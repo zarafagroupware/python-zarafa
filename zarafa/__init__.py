@@ -1514,6 +1514,21 @@ class Item(object):
     def message_class(self):
         return self.prop(PR_MESSAGE_CLASS).value
 
+    @message_class.setter
+    def message_class(self, messageclass):
+        # FIXME: Add all possible PR_MESSAGE_CLASS values
+        '''
+        MAPI Message classes:
+        * IPM.Note.SMIME.MultipartSigned - smime signed email
+        * IMP.Note                       - normal email
+        * IPM.Note.SMIME                 - smime encypted email
+        * IPM.StickyNote                 - note
+        * IPM.Appointment                - appointment
+        * IPM.Task                       - task
+        '''
+        self.mapiobj.SetProps([SPropValue(PR_MESSAGE_CLASS, unicode(messageclass))])
+        self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
+
     @body.setter
     def body(self, x):
         self.mapiobj.SetProps([SPropValue(PR_BODY_W, unicode(x))])
