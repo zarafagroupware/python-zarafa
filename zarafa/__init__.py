@@ -1733,6 +1733,16 @@ class Item(object):
         self.mapiobj.ModifyRecipients(0, names)
         self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE) # XXX needed?
 
+    def delete(self, items):
+        # XXX attachments
+        if isinstance(items, Property):
+            proptags = [items.proptag]
+        else:
+            proptags = [item.proptag for item in items]
+        if proptags:
+            self.mapiobj.DeleteProps(proptags)
+            self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
+
     def _dump(self):
         d = {}
         props = []
