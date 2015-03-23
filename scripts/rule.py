@@ -15,7 +15,7 @@ class importer:
         pass
 
 server = zarafa.Server()
-store = server.user(server.options.auth_user).store
+store = server.user(server.options.auth_user).store # auth_user checks -U/--auth-user command-line option
 inbox, junk = store.inbox, store.junk
 
 state = inbox.state

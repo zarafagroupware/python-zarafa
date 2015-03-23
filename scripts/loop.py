@@ -3,7 +3,7 @@ import zarafa
 server = zarafa.Server()
 
 for prop in server.admin_store.props():
-    print prop.name, prop.proptag, repr(prop.value)
+    print prop.idname if not prop.named else prop.name, hex(prop.proptag), repr(prop.value)
 
 for company in server.companies():
 	print 'company:', company.name

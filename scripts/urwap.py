@@ -4,6 +4,8 @@ import sys
 import urwid
 import zarafa
 
+# 100-line "graphical" email client. run with -h/--help for options
+
 FOOT1 = 'J=down, K=up, R=reply, D=delete, N=refresh, Q=quit'
 FOOT2 = 'Ctrl-X=send, Ctrl-Y=ESC=cancel'
 PALETTE = [
