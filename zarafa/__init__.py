@@ -1719,7 +1719,7 @@ class Item(object):
                     email = addr[addr.find('<')+1:addr.find('>')].strip()
                     addrs2.append(Address(name=name, email=email))
                 else:
-                    addrs2.append(Address(email=addr))
+                    addrs2.append(Address(email=addr.strip()))
         ab = self.server.mapisession.OpenAddressBook(0, None, 0) # XXX
         names = []
         for addr in addrs2:
