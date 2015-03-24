@@ -302,7 +302,7 @@ Wrapper around MAPI properties
                 return v.encode('hex').upper()
             else:
                 return unicode(v).encode('utf-8')
-        return flatten(self._value)
+        return flatten(self.value)
 
     def __lt__(self, prop):
         return self.proptag < prop.proptag
