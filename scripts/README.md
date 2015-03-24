@@ -1,6 +1,6 @@
 zarafa-spamhandler
 ====
-A description of the zarafa-spamhandler can be found in this [blog post](http://www.zarafa.com/blog/post/2014/08/cool-scripts-and-tools-automated-spam-processing-python-zarafa-and-zarafa-spamhand)
+A description of the zarafa-spamhandler can be found in this [blog post](https://www.zarafa.com/cool-scripts-and-tools-automated-spam-processing-with-python-zarafa-and-zarafa-spamhandler-py/)
 
 delete\_olditems.py
 =====
