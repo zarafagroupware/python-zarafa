@@ -1324,9 +1324,12 @@ class Folder(object):
                     for subfolder in folder.folders(depth=depth+1):
                         yield subfolder
 
-    def create_folder(self, name): # XXX: do we want to set some properties of the folder, for example PR_CONTAINER_CLASS?
+    def create_folder(self, name, **kwargs):
         mapifolder = self.mapiobj.CreateFolder(FOLDER_GENERIC, unicode(name), u'', None, MAPI_UNICODE)
-        return Folder(self.store, HrGetOneProp(mapifolder, PR_ENTRYID).Value)
+        folder = Folder(self.store, HrGetOneProp(mapifolder, PR_ENTRYID).Value)
+        for key, val in kwargs.items():
+            setattr(folder, key, val)
+        return folder
 
     def prop(self, proptag):
         return _prop(self, self.mapiobj, proptag)
