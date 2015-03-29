@@ -1736,6 +1736,10 @@ class Item(object):
         return self.prop('common:34071').value
 
     @property
+    def recurring(self):
+        return item.prop('appointment:33315').value
+
+    @property
     def recurrence(self):
         return Recurrence(self)
 
@@ -1915,7 +1919,6 @@ class Recurrence:
         self.clipend = item.prop('appointment:33334').value
         self.clipstart = item.prop('appointment:33333').value 
         self.recurrence_pattern = item.prop('appointment:33330').value
-        self.recurring = item.prop('appointment:33315').value
         self.invited = item.prop('appointment:33321').value
 
 class Outofoffice(object):
