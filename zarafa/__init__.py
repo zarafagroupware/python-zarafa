@@ -1363,17 +1363,17 @@ class Folder(object):
 
     def readmbox(self, location):
         for message in mailbox.mbox(location):
-            newitem = Item(self, message.__str__())
+            newitem = Item(self, eml=message.__str__(), create=True)
 
-    def mbox(self, location):
+    def mbox(self, location): # FIXME: inconsistent with maildir()
         mboxfile = mailbox.mbox(location)
         mboxfile.lock()
         for item in self.items():
             mboxfile.add(item.eml())
         mboxfile.unlock()
 
-    def maildir(self):
-        destination = mailbox.MH(self.name)
+    def maildir(self, location='.'):
+        destination = mailbox.MH(location + '/' + self.name)
         destination.lock()
         for item in self.items():
             destination.add(item.eml())
@@ -1381,7 +1381,7 @@ class Folder(object):
 
     def read_maildir(self, location):
         for message in mailbox.MH(location):
-            newitem = Item(self, message.__str__())
+            newitem = Item(self, eml=message.__str__(), create=True)
 
     @property
     def associated(self):
