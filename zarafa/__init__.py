@@ -319,7 +319,15 @@ Wrapper around MAPI properties
         self._parent_mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
     value = property(get_value, set_value)
 
-    def strval(self, sep=','):
+    @property
+    def strid(self):
+        if self.named:
+            return '%s:%s' % (self.namespace, self.name)
+        else:
+            return self.idname
+
+    @property
+    def strval(self):
         def flatten(v):
             if isinstance(v, list):
                 return sep.join(flatten(e) for e in v)
@@ -383,7 +391,7 @@ class Table(object):
                 pass
 
     def data(self, header=False):
-        data = [[p.strval() for p in row] for row in self.rows()]
+        data = [[p.strval for p in row] for row in self.rows()]
         if header:
             data = [self.header] + data
         return data
