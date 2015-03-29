@@ -48,7 +48,6 @@ Main classes:
 # Python 2.5 doesn't have with
 from __future__ import with_statement
 
-
 import contextlib
 import cPickle as pickle
 import csv
@@ -180,6 +179,7 @@ def _prop(self, mapiobj, proptag):
         raise MAPIErrorNotFound
 
 def _props(mapiobj, namespace=None):
+    # XXX show and stream large properties
     proptags = mapiobj.GetPropList(MAPI_UNICODE)
     sprops = mapiobj.GetProps(proptags, MAPI_UNICODE)
     props = [Property(mapiobj, sprop) for sprop in sprops]
@@ -269,6 +269,22 @@ class ZarafaNotFoundException(ZarafaException):
     pass
 
 
+class SPropDelayedValue(SPropValue):
+    def __init__(self, mapiobj, proptag):
+        self.mapiobj = mapiobj
+        self.ulPropTag = proptag
+        self._Value = None
+
+    @property
+    def Value(self):
+        if self._Value is None:
+            try:
+                self._Value = _stream(self.mapiobj, self.ulPropTag)
+            except MAPIErrorNotFound: # XXX eg normalized subject streaming broken..?
+                self._Value = None
+        return self._Value
+
+
 class Property(object):
     """ 
 Wrapper around MAPI properties 
@@ -277,10 +293,23 @@ Wrapper around MAPI properties
 
     def __init__(self, parent_mapiobj, mapiobj): # XXX rethink attributes, names.. add guidname..?
         self._parent_mapiobj = parent_mapiobj
-        self.mapiobj = mapiobj # SPropValue
+
+        if PROP_TYPE(mapiobj.ulPropTag) == PT_ERROR and mapiobj.Value == MAPI_E_NOT_ENOUGH_MEMORY:
+            for proptype in (PT_BINARY, PT_UNICODE): # XXX slow, incomplete?
+                proptag = (mapiobj.ulPropTag & 0xffff0000) | proptype
+                try:
+                    HrGetOneProp(parent_mapiobj, proptag)
+                except MAPIErrorNotEnoughMemory:
+                    mapiobj = SPropDelayedValue(parent_mapiobj, proptag)
+                    break
+                except MAPIErrorNotFound:
+                    pass
 
         self.proptag = mapiobj.ulPropTag
         self.id_ = self.proptag >> 16
+        self.mapiobj = mapiobj
+        self._value = None
+
         self.idname = REV_TAG.get(self.proptag) # XXX slow, often unused: make into properties?
         self.type_ = PROP_TYPE(self.proptag)
         self.typename = REV_TYPE.get(self.type_)
@@ -290,11 +319,6 @@ Wrapper around MAPI properties
         self.guid = None
         self.name = None
         self.namespace = None
-
-        if self.type_ == PT_SYSTIME: # XXX generalize, property, timezones?
-            self._value = datetime.datetime.fromtimestamp(self.mapiobj.Value.unixtime)
-        else:
-            self._value = self.mapiobj.Value
 
         if self.named:
             try:
@@ -308,6 +332,11 @@ Wrapper around MAPI properties
                 pass
 
     def get_value(self):
+        if self._value is None:
+            if self.type_ == PT_SYSTIME: # XXX generalize, property, timezones?
+                self._value = datetime.datetime.fromtimestamp(self.mapiobj.Value.unixtime)
+            else:
+                self._value = self.mapiobj.Value
         return self._value
 
     def set_value(self, value):
@@ -342,7 +371,7 @@ Wrapper around MAPI properties
         return self.proptag < prop.proptag
 
     def __unicode__(self):
-        return u'Property(%s, %s)' % (self.name if self.named else self.idname, repr(self._value))
+        return u'Property(%s)' % self.strid
 
     # TODO: check if data is binary and convert it to hex
     def __repr__(self):
