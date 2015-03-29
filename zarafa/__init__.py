@@ -52,10 +52,10 @@ from __future__ import with_statement
 import contextlib
 import cPickle as pickle
 import csv
-try:
-    import daemon.pidlockfile
-except ImportError:
-    pass
+import daemon
+import errno
+import lockfile
+import daemon.pidlockfile
 import datetime
 import grp
 try:
