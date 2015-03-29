@@ -141,9 +141,27 @@ def DEFINE_ABEID(type, id):
     return struct.pack("4B16s3I4B", 0, 0, 0, 0, MUIDECSAB, 0, type, id, 0, 0, 0, 0)
 EID_EVERYONE = DEFINE_ABEID(MAPI_DISTLIST, 1)
 
+def _stream(mapiobj, proptag):
+    stream = mapiobj.OpenProperty(proptag, IID_IStream, 0, 0)
+    data = []
+    while True:
+        blup = stream.Read(0xFFFFF) # 1 MB
+        if len(blup) == 0:
+            break
+        data.append(blup)
+    data = ''.join(data)
+    if PROP_TYPE(proptag) == PT_UNICODE:
+        data = data.decode('utf-32le') # under windows them be utf-16le?
+    return data
+
 def _prop(self, mapiobj, proptag):
     if isinstance(proptag, (int, long)):
-        return Property(mapiobj, HrGetOneProp(mapiobj, proptag))
+        try:
+            sprop = HrGetOneProp(mapiobj, proptag)
+        except MAPIErrorNotEnoughMemory:
+            data = _stream(mapiobj, proptag)
+            sprop = SPropValue(proptag, data)
+        return Property(mapiobj, sprop)
     else:
         namespace, name = proptag.split(':') # XXX syntax
         if name.isdigit(): # XXX
@@ -1489,7 +1507,7 @@ class Item(object):
         """ Item subject or *None* if no subject """
 
         try:
-            return HrGetOneProp(self.mapiobj, PR_SUBJECT_W).Value
+            return self.prop(PR_SUBJECT_W).value
         except MAPIErrorNotFound:
             return u''
 
@@ -1626,16 +1644,9 @@ class Item(object):
     def eml(self):
         """ Return .eml version of item """
 
-        if not self.emlfile:
+        if self.emlfile is None:
             try:
-                stream = self.mapiobj.OpenProperty(PR_EC_IMAP_EMAIL, IID_IStream, 0 ,0)
-                data = []
-                while True:
-                    blup = stream.Read(0xFFFFF) # 1 MB
-                    if len(blup) == 0:
-                        break
-                    data.append(blup)
-                self.emlfile = ''.join(data)
+                self.emlfile = _stream(self.mapiobj, PR_EC_IMAP_EMAIL)
             except MAPIErrorNotFound:
                 sopt = inetmapi.sending_options()
                 sopt.no_recipients_workaround = True
@@ -1817,14 +1828,7 @@ class Body:
 
         try:
             mapiitem = self.mapiitem._arch_item # XXX server already goes 'underwater'.. check details
-            stream = mapiitem.OpenProperty(PR_BODY_W, IID_IStream, 0, 0)
-            data = []
-            while True:
-                blup = stream.Read(0xFFFFF) # 1 MB
-                if len(blup) == 0:
-                    break
-                data.append(blup)
-            return ''.join(data).decode('utf-32le') # XXX under windows this be utf-16le or something
+            return _stream(mapiitem, PR_BODY_W).decode('utf-32le') # under windows them be utf-16le?
         except MAPIErrorNotFound:
             return u''
 
@@ -1834,14 +1838,7 @@ class Body:
 
         try:
             mapiitem = self.mapiitem._arch_item
-            stream = mapiitem.OpenProperty(PR_HTML, IID_IStream, 0, 0)
-            data = []
-            while True:
-                blup = stream.Read(0xFFFFF) # 1 MB
-                if len(blup) == 0:
-                    break
-                data.append(blup)
-            return ''.join(data) # XXX do we need to do something about encodings? 
+            return _stream(mapiitem, PR_HTML)
         except MAPIErrorNotFound:
             return ''
 
@@ -2009,21 +2006,12 @@ class Attachment(object):
     def data(self):
         """ Binary data """
 
-        if self._data is not None:
-            return self._data
-        try:
-            method = HrGetOneProp(self.att, PR_ATTACH_METHOD).Value # XXX unused
-            stream = self.att.OpenProperty(PR_ATTACH_DATA_BIN, IID_IStream, 0, 0)
-        except MAPIErrorNotFound:
-            self._data = ''
-            return self._data
-        data = []
-        while True:
-            blup = stream.Read(0xFFFFF) # 1 MB
-            if len(blup) == 0:
-                break
-            data.append(blup)
-        self._data = ''.join(data)
+        if self._data is None:
+            try:
+                method = HrGetOneProp(self.att, PR_ATTACH_METHOD).Value # XXX is this just here to raise an exception?
+                self._data = _stream(self.att, PR_ATTACH_DATA_BIN)
+            except MAPIErrorNotFound:
+                self._data = ''
         return self._data
 
     # file-like behaviour
