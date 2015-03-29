@@ -115,8 +115,13 @@ NAMED_PROPS_INTERNET_HEADERS = [MAPINAMEID(PS_INTERNET_HEADERS, MNID_STRING, u'x
 
 # XXX from common/mapiguidext.h
 PSETID_Archive = DEFINE_GUID(0x72e98ebc, 0x57d2, 0x4ab5, 0xb0, 0xaa, 0xd5, 0x0a, 0x7b, 0x53, 0x1c, 0xb9)
-PSETID_Common = DEFINE_OLEGUID(0x00062008, 0, 0)
 PSETID_Appointment = DEFINE_OLEGUID(0x00062002, 0, 0)
+PSETID_Task = DEFINE_OLEGUID(0x00062003, 0, 0)
+PSETID_Address = DEFINE_OLEGUID(0x00062004, 0, 0)
+PSETID_Common = DEFINE_OLEGUID(0x00062008, 0, 0)
+PSETID_Log = DEFINE_OLEGUID(0x0006200A, 0, 0)
+PSETID_Note = DEFINE_OLEGUID(0x0006200E, 0, 0)
+
 
 NAMED_PROPS_ARCHIVER = [MAPINAMEID(PSETID_Archive, MNID_STRING, u'store-entryids'), MAPINAMEID(PSETID_Archive, MNID_STRING, u'item-entryids'), MAPINAMEID(PSETID_Archive, MNID_STRING, u'stubbed'),]
 
@@ -124,6 +129,10 @@ GUID_NAMESPACE = {
     PSETID_Archive: 'archive',
     PSETID_Common: 'common',
     PSETID_Appointment: 'appointment',
+    PSETID_Task: 'task',
+    PSETID_Address: 'address',
+    PSETID_Log: 'log',
+    PS_INTERNET_HEADERS: 'internet_headers',
 }
 NAMESPACE_GUID = dict((b,a) for (a,b) in GUID_NAMESPACE.items()) 
 
