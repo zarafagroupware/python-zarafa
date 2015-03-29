@@ -122,7 +122,6 @@ PSETID_Common = DEFINE_OLEGUID(0x00062008, 0, 0)
 PSETID_Log = DEFINE_OLEGUID(0x0006200A, 0, 0)
 PSETID_Note = DEFINE_OLEGUID(0x0006200E, 0, 0)
 
-
 NAMED_PROPS_ARCHIVER = [MAPINAMEID(PSETID_Archive, MNID_STRING, u'store-entryids'), MAPINAMEID(PSETID_Archive, MNID_STRING, u'item-entryids'), MAPINAMEID(PSETID_Archive, MNID_STRING, u'stubbed'),]
 
 GUID_NAMESPACE = {
@@ -1870,15 +1869,40 @@ class Body:
 
 class Recurrence:
     def __init__(self, item): # XXX just readable start/end for now
+        # TODO: add check if we actually have a recurrence, otherwise we throw a mapi exception which might not be desirable
         value = item.prop('appointment:33302').value # recurrencestate
         SHORT, LONG = 2, 4
         pos = 5 * SHORT + 3 * LONG
-        patterntype = _unpack_short(value, 3*SHORT)
-        if patterntype in (1, 2, 4, 10, 12):
+        self.patterntype = _unpack_short(value, 3*SHORT)
+        # TODO: use a library
+        weekdays = {0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday'}
+        # FIXME: somehow set a property with the pattern
+        if self.patterntype == 1: # Weekly recurrence
+            self.pattern = _unpack_long(value, pos) # WeekDays
             pos += LONG
-        elif patterntype in (3, 11):
-            pos += 2*LONG
-        pos += 3 *LONG
+
+            # TODO: global function for month/yearly?
+            represenation = []
+            for index, week in weekdays.iteritems():
+                if (self.pattern >> index ) & 1:
+                    represenation.append(week)
+            self.week_pattern = ', '.join(represenation) # FIXME: name?
+
+        if self.patterntype in (2, 4, 10, 12): # Monthly recurrence
+            self.pattern = _unpack_long(value, pos)
+            pos += LONG # Days Of Month
+        elif self.patterntype in (3, 11): # Yearly recurrence
+            weekdays = _unpack_long(value, pos)
+            weeknumber = _unpack_long(value, pos)
+            pos += 2*LONG # WeekNumber/  WeekDays?
+
+        self.endtype = _unpack_long(value, pos)
+        pos += LONG
+        self.occurrence_count = _unpack_long(value, pos)
+        pos += LONG
+        self.first_dow = _unpack_long(value, pos)
+        pos += LONG
+
         delcount = _unpack_long(value, pos)
         pos += LONG + delcount*LONG
         modcount = _unpack_long(value, pos)
@@ -1886,6 +1910,13 @@ class Recurrence:
         self.start = datetime.datetime.fromtimestamp(_rectime_to_unixtime(_unpack_long(value, pos)))
         pos += LONG
         self.end = datetime.datetime.fromtimestamp(_rectime_to_unixtime(_unpack_long(value, pos)))
+
+        # FIXME: move to class Item?
+        self.clipend = item.prop('appointment:33334').value
+        self.clipstart = item.prop('appointment:33333').value 
+        self.recurrence_pattern = item.prop('appointment:33330').value
+        self.recurring = item.prop('appointment:33315').value
+        self.invited = item.prop('appointment:33321').value
 
 class Outofoffice(object):
     """
