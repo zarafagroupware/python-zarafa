@@ -329,7 +329,7 @@ Wrapper around MAPI properties
     def strval(self):
         def flatten(v):
             if isinstance(v, list):
-                return sep.join(flatten(e) for e in v)
+                return ','.join(flatten(e) for e in v)
             elif isinstance(v, bool):
                 return '01'[v]
             elif self.type_ == PT_BINARY:
