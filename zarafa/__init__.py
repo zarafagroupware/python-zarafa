@@ -1876,8 +1876,14 @@ class Recurrence:
         # TODO: add check if we actually have a recurrence, otherwise we throw a mapi exception which might not be desirable
         value = item.prop('appointment:33302').value # recurrencestate
         SHORT, LONG = 2, 4
-        pos = 5 * SHORT + 3 * LONG
-        self.patterntype = _unpack_short(value, 3*SHORT)
+        pos = 5 * SHORT + 3 * LONG 
+
+        self.recurrence_frequency = _unpack_short(value, 2 * SHORT)
+        self.patterntype = _unpack_short(value, 3 * SHORT)
+        self.calendar_type = _unpack_short(value, 4 * SHORT)
+        self.first_datetime = _unpack_long(value, 5 * SHORT)
+        self.period = _unpack_long(value , 5 * SHORT + LONG) # 12 for year, coincedence?
+
         # TODO: use a library
         weekdays = {0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday'}
         # FIXME: somehow set a property with the pattern
@@ -1893,8 +1899,8 @@ class Recurrence:
             self.week_pattern = ', '.join(represenation) # FIXME: name?
 
         if self.patterntype in (2, 4, 10, 12): # Monthly recurrence
-            self.pattern = _unpack_long(value, pos)
-            pos += LONG # Days Of Month
+            self.pattern = _unpack_long(value, pos) # Day Of Month
+            pos += LONG
         elif self.patterntype in (3, 11): # Yearly recurrence
             weekdays = _unpack_long(value, pos)
             weeknumber = _unpack_long(value, pos)
@@ -1911,9 +1917,15 @@ class Recurrence:
         pos += LONG + delcount*LONG
         modcount = _unpack_long(value, pos)
         pos += LONG + modcount*LONG
+
         self.start = datetime.datetime.fromtimestamp(_rectime_to_unixtime(_unpack_long(value, pos)))
         pos += LONG
         self.end = datetime.datetime.fromtimestamp(_rectime_to_unixtime(_unpack_long(value, pos)))
+
+        pos += 2 * LONG
+        self.startime_offset = _unpack_long(value, pos) # XXX: type?
+        pos += LONG
+        self.endime_offset = _unpack_long(value, pos) # XXX: type?
 
         # FIXME: move to class Item?
         self.clipend = item.prop('appointment:33334').value
