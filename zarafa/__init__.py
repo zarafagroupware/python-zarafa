@@ -1007,7 +1007,7 @@ class Store(object):
 
         # determine root folder
         if system:
-            root = self.mapiobj.OpenEntry(None, None, 0)
+            root = self._root
         else:
             try:
                 if self.public:
