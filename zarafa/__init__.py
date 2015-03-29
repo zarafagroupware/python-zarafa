@@ -1883,7 +1883,7 @@ class Body:
 
         try:
             mapiitem = self.mapiitem._arch_item # XXX server already goes 'underwater'.. check details
-            return _stream(mapiitem, PR_BODY_W).decode('utf-32le') # under windows them be utf-16le?
+            return _stream(mapiitem, PR_BODY_W) # under windows them be utf-16le?
         except MAPIErrorNotFound:
             return u''
 
@@ -2253,9 +2253,9 @@ class User(object):
 
     @property
     def outofoffice(self):
-       """ User :class:`Outofoffice` """
+        """ User :class:`Outofoffice` """
 
-       return self.store.outofoffice
+        return self.store.outofoffice
 
     def groups(self):
         for g in self.server.sa.GetGroupListOfUser(self._ecuser.UserID, MAPI_UNICODE):
