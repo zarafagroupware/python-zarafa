@@ -369,26 +369,29 @@ class Table(object):
     def header(self):
         return [REV_TAG.get(c, hex(c)) for c in self.mapitable.QueryColumns(0)]
 
-    def rows(self): # XXX custom Row class, with dict-like access? namedtuple?
+    def rows(self):
         try:
             for row in self.mapitable.QueryRows(-1, 0):
                 yield [Property(self.server.mapistore, c) for c in row]
         except MAPIErrorNotFound:
             pass
 
-    # TODO: refactor function
     def dict_rows(self):
-        if self.proptag == PR_EC_STATSTABLE_SYSTEM:
-            try:
-                return dict([(row[0].Value, row[2].Value) for row in self.mapitable.QueryRows(-1, 0)])
-            except MAPIErrorNotFound:
-                pass
-        else:
-            try:
-                return (dict([(c.ulPropTag, c.Value) for c in row]) for row in self.mapitable.QueryRows(-1, 0))
-            except MAPIErrorNotFound:
-                pass
+        for row in self.mapitable.QueryRows(-1, 0):
+            yield dict((c.ulPropTag, c.Value) for c in row)
 
+    def dict_(self, key, value):
+        d = {}
+        for row in self.mapitable.QueryRows(-1, 0):
+            d[PpropFindProp(row, key).Value] = PpropFindProp(row, value).Value
+        return d
+
+    def index(self, key):
+        d = {}
+        for row in self.mapitable.QueryRows(-1, 0):
+            d[PpropFindProp(row, key).Value] = dict((c.ulPropTag, c.Value) for c in row)
+        return d
+ 
     def data(self, header=False):
         data = [[p.strval for p in row] for row in self.rows()]
         if header:
