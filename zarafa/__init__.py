@@ -1186,7 +1186,7 @@ class Folder(object):
             if self.entryid == self.store.root.entryid: # Root folder's PR_DISPLAY_NAME_W is never set
                 return u'ROOT'
             else:
-                return ''
+                return u''
 
     @name.setter
     def name(self, name):
