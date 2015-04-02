@@ -698,6 +698,14 @@ Looks at command-line to see if another server address or other related options 
         for name in MAPI.Util.AddressBook.GetGroupList(self.mapisession, None, MAPI_UNICODE):
             yield Group(name, self)
 
+    def group(self, name):
+        return Group(name, self)
+
+    def create_group(self, name):
+        name = unicode(name)
+        companyeid = self.sa.CreateGroup(ECGROUP(name, name, name), MAPI_UNICODE)
+        return self.group(name)
+
     def store(self, guid):
         """ Return :class:`store <Store>` with given GUID; raise exception if not found """
 
@@ -781,7 +789,7 @@ Looks at command-line to see if another server address or other related options 
 class Group(object):
     def __init__(self, name, server=None):
         self.server = server or Server()
-        self.name = name
+        self.name = unicode(name)
 
     def users(self):
         _ecgroup = self.server.sa.GetGroup(self.server.sa.ResolveGroupName(self.name, MAPI_UNICODE), MAPI_UNICODE)
