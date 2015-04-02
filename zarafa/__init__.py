@@ -1648,6 +1648,12 @@ class Item(object):
     def importance(self, value):
         ''' Set importance '''
 
+        '''
+        PR_IMPORTANCE_LOW
+        PR_IMPORTANCE_MEDIUM
+        PR_IMPORTANCE_HIGH
+        '''
+
         self.mapiobj.SetProps([SPropValue(PR_IMPORTANCE, value)])
         self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
@@ -1812,6 +1818,7 @@ class Item(object):
     def _dump(self):
         d = {}
         props = []
+        # XXX: also provide libcommon package (swigged) or re-implemented here.
 #        bestbody_tag = libcommon.Util.GetBestBody(self.mapiobj, MAPI_UNICODE)
         for prop in self.props():
 #            if prop.proptag == bestbody_tag:
