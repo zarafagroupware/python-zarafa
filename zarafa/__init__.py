@@ -706,6 +706,10 @@ Looks at command-line to see if another server address or other related options 
         companyeid = self.sa.CreateGroup(ECGROUP(name, name, name), MAPI_UNICODE)
         return self.group(name)
 
+    def remove_group(self, name):
+        group = self.group(name)
+        self.sa.DeleteGroup(group._ecgroup.GroupID)
+
     def store(self, guid):
         """ Return :class:`store <Store>` with given GUID; raise exception if not found """
 
@@ -790,10 +794,10 @@ class Group(object):
     def __init__(self, name, server=None):
         self.server = server or Server()
         self.name = unicode(name)
+        self._ecgroup = self.server.sa.GetGroup(self.server.sa.ResolveGroupName(self.name, MAPI_UNICODE), MAPI_UNICODE)
 
     def users(self):
-        _ecgroup = self.server.sa.GetGroup(self.server.sa.ResolveGroupName(self.name, MAPI_UNICODE), MAPI_UNICODE)
-        for ecuser in self.server.sa.GetUserListOfGroup(_ecgroup.GroupID, MAPI_UNICODE):
+        for ecuser in self.server.sa.GetUserListOfGroup(self._ecgroup.GroupID, MAPI_UNICODE):
             if ecuser.Username == 'SYSTEM':
                 continue
             try:
