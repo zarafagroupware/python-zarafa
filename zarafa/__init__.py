@@ -1391,6 +1391,12 @@ class Folder(object):
             setattr(folder, key, val)
         return folder
 
+    def rules(self):
+        rule_table = self.mapiobj.OpenProperty(PR_RULES_TABLE, IID_IExchangeModifyTable, 0, 0)
+        table = Table(self.server, rule_table.GetTable(0), PR_RULES_TABLE)
+        for row in table.dict_rows():
+            yield Rule(row[PR_RULE_NAME], row[PR_RULE_STATE]) # XXX fix args
+
     def prop(self, proptag):
         return _prop(self, self.mapiobj, proptag)
 
@@ -1400,7 +1406,7 @@ class Folder(object):
     def table(self, name, restriction=None, order=None, columns=None): # XXX associated, PR_CONTAINER_CONTENTS?
         return Table(self.server, self.mapiobj.OpenProperty(name, IID_IMAPITable, MAPI_UNICODE, 0), name, restriction=restriction, order=order, columns=columns)
 
-    def tables(self): # XXX associated
+    def tables(self): # XXX associated, rules
         yield self.table(PR_CONTAINER_CONTENTS)
         yield self.table(PR_FOLDER_ASSOCIATED_CONTENTS)
         yield self.table(PR_CONTAINER_HIERARCHY)
@@ -2280,6 +2286,10 @@ class User(object):
         for g in self.server.sa.GetGroupListOfUser(self._ecuser.UserID, MAPI_UNICODE):
             yield Group(g.Groupname, self.server)
 
+
+    def rules(self):
+        return self.inbox.rules()
+
     def __unicode__(self):
         return u"User('%s')" % self._name
 
@@ -2389,6 +2399,18 @@ class Quota(object):
 
     def __repr__(self):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
+
+class Rule:
+    def __init__(self, name, state): # XXX fix args
+        self.name = unicode(name)
+        self.active = bool(state & ST_ENABLED)
+
+    def __unicode__(self):
+        return u"Rule('%s')" % self.name
+
+    def __repr__(self):
+        return unicode(self).encode(sys.stdout.encoding or 'utf8')
+
 
 class TrackingContentsImporter(ECImportContentsChanges):
     def __init__(self, server, importer, log):
