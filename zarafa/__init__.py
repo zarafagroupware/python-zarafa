@@ -444,6 +444,9 @@ class Table(object):
         writer.writerows(self.data(header=True))
         return csvfile.getvalue()
 
+    def sort(self, tag, reverse=False):
+        self.mapitable.SortTable(SSortOrderSet([SSort(tag, TABLE_SORT_DESCEND if reverse else TABLE_SORT_ASCEND)], 0, 0), 0)
+
     def __iter__(self):
         return self.rows()
 
