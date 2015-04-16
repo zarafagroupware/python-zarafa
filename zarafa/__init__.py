@@ -704,9 +704,12 @@ Looks at command-line to see if another server address or other related options 
     def group(self, name):
         return Group(name, self)
 
-    def create_group(self, name):
-        name = unicode(name)
-        companyeid = self.sa.CreateGroup(ECGROUP(name, name, name), MAPI_UNICODE)
+    def create_group(self, name, fullname='', email='', hidden = False, groupid = None):
+        name = unicode(name) # XXX: fullname/email unicode?
+        email = unicode(email)
+        fullname = unicode(fullname)
+        companyeid = self.sa.CreateGroup(ECGROUP(name, fullname, email, int(hidden), groupid), MAPI_UNICODE)
+
         return self.group(name)
 
     def remove_group(self, name):
@@ -796,8 +799,8 @@ Looks at command-line to see if another server address or other related options 
 class Group(object):
     def __init__(self, name, server=None):
         self.server = server or Server()
-        self.name = unicode(name)
-        self._ecgroup = self.server.sa.GetGroup(self.server.sa.ResolveGroupName(self.name, MAPI_UNICODE), MAPI_UNICODE)
+        self._name = unicode(name)
+        self._ecgroup = self.server.sa.GetGroup(self.server.sa.ResolveGroupName(self._name, MAPI_UNICODE), MAPI_UNICODE)
 
     def users(self):
         for ecuser in self.server.sa.GetUserListOfGroup(self._ecgroup.GroupID, MAPI_UNICODE):
@@ -808,11 +811,63 @@ class Group(object):
             except ZarafaException: # XXX everyone, groups are included as users..
                 pass
 
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        self._update(name=unicode(value))
+
+    @property
+    def email(self):
+        return self._ecgroup.Email
+
+    @email.setter
+    def email(self, value):
+        self._update(email=unicode(value))
+
+    @property
+    def fullname(self):
+        return self._ecgroup.Fullname
+
+    @fullname.setter
+    def fullname(self, value):
+        self._update(fullname=unicode(value))
+
+    @property
+    def hidden(self):
+        return self._ecgroup.IsHidden == True
+
+    @hidden.setter
+    def hidden(self, value):
+        self._update(hidden=value)
+
+    @property
+    def groupid(self):
+        return bin2hex(self._ecgroup.GroupID)
+
+    def add_user(self, user):
+        self.server.sa.AddGroupUser(self._ecgroup.GroupID, user._ecuser.UserID)
+
+    def remove_user(self, user):
+        self.server.sa.DeleteGroupUser(self._ecgroup.GroupID, user._ecuser.UserID)
+
+    def _update(self, **kwargs):
+        # XXX: crashes server on certain characters...
+        name = kwargs.get('name', self.name)
+        fullname = kwargs.get('fullname', self.fullname)
+        email = kwargs.get('email', self.email)
+        hidden = kwargs.get('hidden', self.hidden)
+        group = ECGROUP(name, fullname, email, int(hidden), self._ecgroup.GroupID)
+        self.server.sa.SetGroup(group, MAPI_UNICODE)
+
     def __unicode__(self):
         return u"Group('%s)" % self.name
 
     def __repr__(self):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
+
 
 class Company(object):
     """ Company class """
