@@ -361,7 +361,7 @@ Wrapper around MAPI properties
                 return ','.join(flatten(e) for e in v)
             elif isinstance(v, bool):
                 return '01'[v]
-            elif self.type_ == PT_BINARY:
+            elif self.type_ == PT_BINARY or self.type_ == PT_MV_BINARY:
                 return v.encode('hex').upper()
             else:
                 return unicode(v).encode('utf-8')
