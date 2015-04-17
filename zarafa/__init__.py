@@ -444,8 +444,10 @@ class Table(object):
         writer.writerows(self.data(header=True))
         return csvfile.getvalue()
 
-    def sort(self, tag, reverse=False):
-        self.mapitable.SortTable(SSortOrderSet([SSort(tag, TABLE_SORT_DESCEND if reverse else TABLE_SORT_ASCEND)], 0, 0), 0)
+    def sort(self, tags):
+        if not isinstance(tags, tuple):
+            tags = (tags,)
+        self.mapitable.SortTable(SSortOrderSet([SSort(abs(tag), TABLE_SORT_ASCEND if tag > 0 else TABLE_SORT_DESCEND) for tag in tags], 0, 0), 0) # XXX no unicode flags?
 
     def __iter__(self):
         return self.rows()
