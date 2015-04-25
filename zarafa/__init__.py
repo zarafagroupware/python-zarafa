@@ -865,7 +865,7 @@ class Group(object):
         self.server.sa.SetGroup(group, MAPI_UNICODE)
 
     def __unicode__(self):
-        return u"Group('%s)" % self.name
+        return u"Group(%s)" % self.name
 
     def __repr__(self):
         return unicode(self).encode(sys.stdout.encoding or 'utf8')
