@@ -1434,14 +1434,14 @@ class Folder(object):
         :param recurse: include all sub-folders
         """
 
-#        if self.mapiobj.GetProps([PR_SUBFOLDERS], MAPI_UNICODE)[0].Value: # XXX no worky?
+        #if self.mapiobj.GetProps([PR_SUBFOLDERS], MAPI_UNICODE)[0].Value: # XXX no worky?
         if True:
             try:
                 table = self.mapiobj.GetHierarchyTable(MAPI_UNICODE)
             except MAPIErrorNoSupport: # XXX webapp search folder?
                 return
 
-            table.SetColumns([PR_ENTRYID, PR_FOLDER_TYPE, PR_DISPLAY_NAME_W], 0)
+            table.SetColumns([PR_ENTRYID], 0)
             rows = table.QueryRows(-1, 0)
             for row in rows:
                 subfolder = self.mapiobj.OpenEntry(row[0].Value, None, MAPI_MODIFY)
