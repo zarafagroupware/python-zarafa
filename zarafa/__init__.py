@@ -298,7 +298,7 @@ Wrapper around MAPI properties
             for proptype in (PT_BINARY, PT_UNICODE): # XXX slow, incomplete?
                 proptag = (mapiobj.ulPropTag & 0xffff0000) | proptype
                 try:
-                    HrGetOneProp(parent_mapiobj, proptag)
+                    HrGetOneProp(parent_mapiobj, proptag) # XXX: Unicode issue?? calls GetProps([proptag], 0)
                 except MAPIErrorNotEnoughMemory:
                     mapiobj = SPropDelayedValue(parent_mapiobj, proptag)
                     break
