@@ -16,7 +16,7 @@ def proplist(item):
     for prop in item.props():
         idname = str(prop.name if prop.named else prop.idname)
         offset = biggest - len(idname or '')
-        props.append('%s %s%s\n' % (idname, ' ' * offset,  prop.strval()))
+        props.append('%s %s%s\n' % (idname, ' ' * offset,  prop.strval))
     return props
 
 def diffitems(item, old_item=[], delete=False):
