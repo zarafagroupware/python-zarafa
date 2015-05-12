@@ -298,7 +298,7 @@ Wrapper around MAPI properties
             for proptype in (PT_BINARY, PT_UNICODE): # XXX slow, incomplete?
                 proptag = (mapiobj.ulPropTag & 0xffff0000) | proptype
                 try:
-                    HrGetOneProp(parent_mapiobj, proptag)
+                    HrGetOneProp(parent_mapiobj, proptag) # XXX: Unicode issue?? calls GetProps([proptag], 0)
                 except MAPIErrorNotEnoughMemory:
                     mapiobj = SPropDelayedValue(parent_mapiobj, proptag)
                     break
@@ -1434,14 +1434,14 @@ class Folder(object):
         :param recurse: include all sub-folders
         """
 
-#        if self.mapiobj.GetProps([PR_SUBFOLDERS], MAPI_UNICODE)[0].Value: # XXX no worky?
+        #if self.mapiobj.GetProps([PR_SUBFOLDERS], MAPI_UNICODE)[0].Value: # XXX no worky?
         if True:
             try:
                 table = self.mapiobj.GetHierarchyTable(MAPI_UNICODE)
             except MAPIErrorNoSupport: # XXX webapp search folder?
                 return
 
-            table.SetColumns([PR_ENTRYID, PR_FOLDER_TYPE, PR_DISPLAY_NAME_W], 0)
+            table.SetColumns([PR_ENTRYID], 0)
             rows = table.QueryRows(-1, 0)
             for row in rows:
                 subfolder = self.mapiobj.OpenEntry(row[0].Value, None, MAPI_MODIFY)

@@ -11,12 +11,11 @@ import zarafa
 ITEM_MAPPING = {}
 
 def proplist(item):
-    biggest = max((len(str((prop.name) if prop.named else prop.idname)) for prop in item.props()))
+    biggest = max((len(prop.strid or 'None') for prop in item.props()))
     props = []
     for prop in item.props():
-        idname = str(prop.name if prop.named else prop.idname)
-        offset = biggest - len(idname or '')
-        props.append('%s %s%s\n' % (idname, ' ' * offset,  prop.strval()))
+        offset = biggest - len(prop.strid or 'None')
+        props.append('%s %s%s\n' % (prop.strid, ' ' * offset,  prop.strval))
     return props
 
 def diffitems(item, old_item=[], delete=False):
@@ -39,8 +38,8 @@ class Importer:
         print '\033[1;41mUpdate: subject: %s folder: %s sender: %s (%s)\033[1;m' % (item.subject, item.folder, item.sender.email, time.strftime('%a %b %d %H:%M:%S %Y'))
         if not flags & SYNC_NEW_MESSAGE:
             old_item = ITEM_MAPPING[item.sourcekey]
-        else: 
-            ITEM_MAPPING[item.sourcekey] = item 
+        else:
+            ITEM_MAPPING[item.sourcekey] = item
             old_item = False
 
         diffitems(item, old_item)
