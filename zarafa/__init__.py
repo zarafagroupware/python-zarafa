@@ -244,6 +244,35 @@ def _openentry_raw(mapistore, entryid, flags): # avoid underwater action for arc
     except MAPIErrorInterfaceNotSupported:
         return mapistore.OpenEntry(entryid, None, flags)
 
+def _bestbody(mapiobj): # XXX we may want to use the swigged version in libcommon, once available
+    # apparently standardized method for determining original message type!
+    tag = PR_NULL
+    props = mapiobj.GetProps([PR_BODY_W, PR_HTML, PR_RTF_COMPRESSED, PR_RTF_IN_SYNC], 0)
+
+    if (props[3].ulPropTag != PR_RTF_IN_SYNC): # XXX why..
+        return tag
+
+    # MAPI_E_NOT_ENOUGH_MEMORY indicates the property exists, but has to be streamed
+    if((props[0].ulPropTag == PR_BODY_W or (PROP_TYPE(props[0].ulPropTag) == PT_ERROR and props[0].Value == MAPI_E_NOT_ENOUGH_MEMORY)) and
+       (PROP_TYPE(props[1].ulPropTag) == PT_ERROR and props[1].Value == MAPI_E_NOT_FOUND) and
+       (PROP_TYPE(props[2].ulPropTag) == PT_ERROR and props[2].Value == MAPI_E_NOT_FOUND)):
+        tag = PR_BODY_W
+
+    # XXX why not just check MAPI_E_NOT_FOUND..?
+    elif((props[1].ulPropTag == PR_HTML or (PROP_TYPE(props[1].ulPropTag) == PT_ERROR and props[1].Value == MAPI_E_NOT_ENOUGH_MEMORY)) and
+         (PROP_TYPE(props[0].ulPropTag) == PT_ERROR and props[0].Value == MAPI_E_NOT_ENOUGH_MEMORY) and
+         (PROP_TYPE(props[2].ulPropTag) == PT_ERROR and props[2].Value == MAPI_E_NOT_ENOUGH_MEMORY) and
+         props[3].Value == False):
+        tag = PR_HTML
+
+    elif((props[2].ulPropTag == PR_RTF_COMPRESSED or (PROP_TYPE(props[2].ulPropTag) == PT_ERROR and props[2].Value == MAPI_E_NOT_ENOUGH_MEMORY)) and
+         (PROP_TYPE(props[0].ulPropTag) == PT_ERROR and props[0].Value == MAPI_E_NOT_ENOUGH_MEMORY) and
+         (PROP_TYPE(props[1].ulPropTag) == PT_ERROR and props[1].Value == MAPI_E_NOT_FOUND) and
+         props[3].Value == True):
+        tag = PR_RTF_COMPRESSED
+
+    return tag
+
 def _unpack_short(s, pos):
     return struct.unpack_from('<H', s, pos)[0]
 
@@ -1990,6 +2019,17 @@ class Body:
             return _stream(mapiitem, PR_HTML)
         except MAPIErrorNotFound:
             return ''
+
+    @property
+    def type_(self):
+        """ original body type: 'text', 'html', 'rtf' or None if it cannot be determined """
+        tag = _bestbody(self.mapiitem.mapiobj)
+        if tag == PR_BODY_W: 
+            return 'text'
+        elif tag == PR_HTML: 
+            return 'html'
+        elif tag == PR_RTF_COMPRESSED: 
+            return 'rtf'
 
     def __unicode__(self):
         return u'Body()'
