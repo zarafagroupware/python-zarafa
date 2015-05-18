@@ -2186,7 +2186,7 @@ class Address:
             try:
                 mapiuser = self.server.mapisession.OpenEntry(self.entryid, None, 0)
                 return self.server.user(HrGetOneProp(mapiuser, PR_ACCOUNT).Value).email
-            except ZarafaException:
+            except (ZarafaException, MAPIErrorNotFound): # XXX what to do with removed user (OpenEntry fails for removed user)
                 return None # XXX 'Support Delft'??
         else:
             return self._email
