@@ -1934,19 +1934,14 @@ class Item(object):
     def _dump(self):
         d = {}
         props = []
-        # XXX: also provide libcommon package (swigged) or re-implemented here.
-#        bestbody_tag = libcommon.Util.GetBestBody(self.mapiobj, MAPI_UNICODE)
+        bestbody = _bestbody(self.mapiobj)
         for prop in self.props():
-#            if prop.proptag == bestbody_tag:
-#                continue
+            if (bestbody != PR_NULL and prop.proptag in (PR_BODY_W, PR_HTML, PR_RTF_COMPRESSED) and prop.proptag != bestbody):
+                continue
             if prop.id_ >= 0x8000:
                 props.append((prop.proptag, prop.mapiobj.Value, self.mapiobj.GetNamesFromIDs([prop.proptag], None, 0)[0]))
             else:
                 props.append((prop.proptag, prop.mapiobj.Value, None))
-#        if bestbody_tag == PR_BODY_W:
-#            props.append((PR_BODY_W, self.body.text, None))
-#        elif bestbody_tag == PR_HTML: # XXX other cases (PR_NULL, PR_RTF_COMPRESSED..?)
-#            props.append((PR_HTML, self.body.html, None))
         d['props'] =  props
         d['recipients'] = [[(prop.proptag, prop.mapiobj.Value) for prop in row] for row in self.table(PR_MESSAGE_RECIPIENTS)]
         d['attachments'] = [[(prop.proptag, prop.mapiobj.Value) for prop in row] for row in self.table(PR_MESSAGE_ATTACHMENTS)]
