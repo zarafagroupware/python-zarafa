@@ -144,6 +144,15 @@ def DEFINE_ABEID(type, id):
     return struct.pack("4B16s3I4B", 0, 0, 0, 0, MUIDECSAB, 0, type, id, 0, 0, 0, 0)
 EID_EVERYONE = DEFINE_ABEID(MAPI_DISTLIST, 1)
 
+ADDR_PROPS = [ 
+    (PR_SENDER_ADDRTYPE_W, PR_SENDER_EMAIL_ADDRESS_W, PR_SENDER_ENTRYID, PR_SENDER_NAME_W, PR_SENDER_SEARCH_KEY),
+    (PR_RECEIVED_BY_ADDRTYPE_W, PR_RECEIVED_BY_EMAIL_ADDRESS_W, PR_RECEIVED_BY_ENTRYID, PR_RECEIVED_BY_NAME_W, PR_RECEIVED_BY_SEARCH_KEY),
+    (PR_ORIGINAL_SENDER_ADDRTYPE_W, PR_ORIGINAL_SENDER_EMAIL_ADDRESS_W, PR_ORIGINAL_SENDER_ENTRYID, PR_ORIGINAL_SENDER_NAME_W, PR_ORIGINAL_SENDER_SEARCH_KEY),
+    (PR_ORIGINAL_AUTHOR_ADDRTYPE_W, PR_ORIGINAL_AUTHOR_EMAIL_ADDRESS_W, PR_ORIGINAL_AUTHOR_ENTRYID, PR_ORIGINAL_AUTHOR_NAME_W, PR_ORIGINAL_AUTHOR_SEARCH_KEY),
+    (PR_SENT_REPRESENTING_ADDRTYPE_W, PR_SENT_REPRESENTING_EMAIL_ADDRESS_W, PR_SENT_REPRESENTING_ENTRYID, PR_SENT_REPRESENTING_NAME_W, PR_SENT_REPRESENTING_SEARCH_KEY),
+    (PR_RCVD_REPRESENTING_ADDRTYPE_W, PR_RCVD_REPRESENTING_EMAIL_ADDRESS_W, PR_RCVD_REPRESENTING_ENTRYID, PR_RCVD_REPRESENTING_NAME_W, PR_RCVD_REPRESENTING_SEARCH_KEY),
+]
+
 def _stream(mapiobj, proptag):
     stream = mapiobj.OpenProperty(proptag, IID_IStream, 0, 0)
     data = []
@@ -1935,16 +1944,35 @@ class Item(object):
             self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
     def _dump(self):
+        ab = self.server.mapisession.OpenAddressBook(0, None, 0) # XXX
         d = {}
         props = []
         bestbody = _bestbody(self.mapiobj)
+        tag_data = {}
+        # collect props to dump
         for prop in self.props():
             if (bestbody != PR_NULL and prop.proptag in (PR_BODY_W, PR_HTML, PR_RTF_COMPRESSED) and prop.proptag != bestbody):
                 continue
-            if prop.id_ >= 0x8000:
-                props.append((prop.proptag, prop.mapiobj.Value, self.mapiobj.GetNamesFromIDs([prop.proptag], None, 0)[0]))
+            if prop.id_ >= 0x8000: # named prop: prop.id_ system dependant..
+                props.append([prop.proptag, prop.mapiobj.Value, self.mapiobj.GetNamesFromIDs([prop.proptag], None, 0)[0]])
             else:
-                props.append((prop.proptag, prop.mapiobj.Value, None))
+                props.append([prop.proptag, prop.mapiobj.Value, None])
+            tag_data[prop.proptag] = props[-1]
+        # rewrite addr props to SMTP
+        for addrtype, email, entryid, name, searchkey in ADDR_PROPS:
+            if addrtype not in tag_data or entryid not in tag_data or name not in tag_data: 
+                continue
+            if tag_data[addrtype][1] in (u'SMTP', u'MAPIDPL'): # MAPIDPL?
+                continue
+            mailuser = self.server.mapisession.OpenEntry(tag_data[entryid][1], None, 0)
+            email_addr = HrGetOneProp(mailuser, PR_SMTP_ADDRESS_W).Value
+            tag_data[addrtype][1] = u'SMTP'
+            tag_data[email][1] = email_addr
+            tag_data[entryid][1] = ab.CreateOneOff(tag_data[name][1], u'SMTP', email_addr, MAPI_UNICODE)
+            if searchkey in tag_data: # XXX probably need to create, also email
+                tag_data[searchkey][1] = 'SMTP:'+str(email_addr).upper()
+        # rewrite recipient props to SMTP
+        # TODO
         d['props'] =  props
         d['recipients'] = [[(prop.proptag, prop.mapiobj.Value) for prop in row] for row in self.table(PR_MESSAGE_RECIPIENTS)]
         d['attachments'] = [[(prop.proptag, prop.mapiobj.Value) for prop in row] for row in self.table(PR_MESSAGE_ATTACHMENTS)]
