@@ -2179,8 +2179,8 @@ class Address:
 
         if self.addrtype == 'ZARAFA':
             try:
-                mapiuser = self.server.mapisession.OpenEntry(self.entryid, None, 0)
-                return self.server.user(HrGetOneProp(mapiuser, PR_ACCOUNT).Value).email
+                mailuser = self.server.mapisession.OpenEntry(self.entryid, None, 0)
+                return self.server.user(HrGetOneProp(mailuser, PR_ACCOUNT).Value).email # XXX PR_SMTP_ADDRESS_W from mailuser?
             except (ZarafaException, MAPIErrorNotFound): # XXX what to do with removed user (OpenEntry fails for removed user)
                 return None # XXX 'Support Delft'??
         else:
