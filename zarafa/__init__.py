@@ -145,6 +145,7 @@ def DEFINE_ABEID(type, id):
 EID_EVERYONE = DEFINE_ABEID(MAPI_DISTLIST, 1)
 
 ADDR_PROPS = [ 
+    (PR_ADDRTYPE_W, PR_EMAIL_ADDRESS_W, PR_ENTRYID, PR_DISPLAY_NAME_W, PR_SEARCH_KEY),
     (PR_SENDER_ADDRTYPE_W, PR_SENDER_EMAIL_ADDRESS_W, PR_SENDER_ENTRYID, PR_SENDER_NAME_W, PR_SENDER_SEARCH_KEY),
     (PR_RECEIVED_BY_ADDRTYPE_W, PR_RECEIVED_BY_EMAIL_ADDRESS_W, PR_RECEIVED_BY_ENTRYID, PR_RECEIVED_BY_NAME_W, PR_RECEIVED_BY_SEARCH_KEY),
     (PR_ORIGINAL_SENDER_ADDRTYPE_W, PR_ORIGINAL_SENDER_EMAIL_ADDRESS_W, PR_ORIGINAL_SENDER_ENTRYID, PR_ORIGINAL_SENDER_NAME_W, PR_ORIGINAL_SENDER_SEARCH_KEY),
@@ -1943,43 +1944,69 @@ class Item(object):
             self.mapiobj.DeleteProps(proptags)
             self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
-    def _dump(self):
+    def _convert_to_smtp(self, props, tag_data):
         ab = self.server.mapisession.OpenAddressBook(0, None, 0) # XXX
-        d = {}
-        props = []
-        bestbody = _bestbody(self.mapiobj)
-        tag_data = {}
-        # collect props to dump
-        for prop in self.props():
-            if (bestbody != PR_NULL and prop.proptag in (PR_BODY_W, PR_HTML, PR_RTF_COMPRESSED) and prop.proptag != bestbody):
-                continue
-            if prop.id_ >= 0x8000: # named prop: prop.id_ system dependant..
-                props.append([prop.proptag, prop.mapiobj.Value, self.mapiobj.GetNamesFromIDs([prop.proptag], None, 0)[0]])
-            else:
-                props.append([prop.proptag, prop.mapiobj.Value, None])
-            tag_data[prop.proptag] = props[-1]
-        # rewrite addr props to SMTP
         for addrtype, email, entryid, name, searchkey in ADDR_PROPS:
             if addrtype not in tag_data or entryid not in tag_data or name not in tag_data: 
                 continue
-            if tag_data[addrtype][1] in (u'SMTP', u'MAPIDPL'): # MAPIDPL?
+            if tag_data[addrtype][1] in (u'SMTP', u'MAPIDPL'): # XXX MAPIDPL==distlist.. can we just dump this?
                 continue
             mailuser = self.server.mapisession.OpenEntry(tag_data[entryid][1], None, 0)
             email_addr = HrGetOneProp(mailuser, PR_SMTP_ADDRESS_W).Value
             tag_data[addrtype][1] = u'SMTP'
-            tag_data[email][1] = email_addr
+            if email in tag_data:
+                tag_data[email][1] = email_addr
+            else:
+                props.append([email, email_addr, None])
             tag_data[entryid][1] = ab.CreateOneOff(tag_data[name][1], u'SMTP', email_addr, MAPI_UNICODE)
+            key = 'SMTP:'+str(email_addr).upper()
             if searchkey in tag_data: # XXX probably need to create, also email
-                tag_data[searchkey][1] = 'SMTP:'+str(email_addr).upper()
-        # rewrite recipient props to SMTP
-        # TODO
-        d['props'] =  props
-        d['recipients'] = [[(prop.proptag, prop.mapiobj.Value) for prop in row] for row in self.table(PR_MESSAGE_RECIPIENTS)]
-        d['attachments'] = [[(prop.proptag, prop.mapiobj.Value) for prop in row] for row in self.table(PR_MESSAGE_ATTACHMENTS)]
-        d['attach_data'] = {}
-        for att in self.attachments():
-            d['attach_data'][att.number] = att.data
-        return d
+                tag_data[searchkey][1] = key
+            else:
+                props.append([searchkey, key, None])
+
+    def _dump(self):
+        # props
+        props = []
+        tag_data = {}
+        bestbody = _bestbody(self.mapiobj)
+        for prop in self.props():
+            if (bestbody != PR_NULL and prop.proptag in (PR_BODY_W, PR_HTML, PR_RTF_COMPRESSED) and prop.proptag != bestbody):
+                continue
+            if prop.id_ >= 0x8000: # named prop: prop.id_ system dependant..
+                data = [prop.proptag, prop.mapiobj.Value, self.mapiobj.GetNamesFromIDs([prop.proptag], None, 0)[0]]
+            else:
+                data = [prop.proptag, prop.mapiobj.Value, None]
+            props.append(data)
+            tag_data[prop.proptag] = data
+        self._convert_to_smtp(props, tag_data)
+
+        # recipients
+        recipients = []
+        for row in self.table(PR_MESSAGE_RECIPIENTS):
+            rprops = []
+            tag_data = {}
+            for prop in row:
+                data = [prop.proptag, prop.mapiobj.Value, None]
+                rprops.append(data)
+                tag_data[prop.proptag] = data
+            recipients.append(rprops)
+            self._convert_to_smtp(rprops, tag_data)
+
+        # attachments
+        attachments = []
+        # XXX optimize by looking at PR_MESSAGE_FLAGS?
+        for row in self.table(PR_MESSAGE_ATTACHMENTS).dict_rows(): # XXX should we use GetAttachmentTable?
+            num = row[PR_ATTACH_NUM]
+            att = self.mapiobj.OpenAttach(num, IID_IAttachment, 0)
+            data = _stream(att, PR_ATTACH_DATA_BIN)
+            attachments.append(([[a, b, None] for a, b in row.items()], data))
+
+        return {
+            'props': props,
+            'recipients': recipients,
+            'attachments': attachments,
+        }
 
     def dump(self, f):
         pickle.dump(self._dump(), f)
@@ -1988,24 +2015,27 @@ class Item(object):
         return pickle.dumps(self._dump())
 
     def _load(self, d):
+        # props
         props = []
         for proptag, value, nameid in d['props']:
             if nameid is not None:
                 proptag = self.mapiobj.GetIDsFromNames([nameid], MAPI_CREATE)[0] | (proptag & 0xffff)
             props.append(SPropValue(proptag, value))
         self.mapiobj.SetProps(props)
-        recipients = [[SPropValue(proptag, value) for (proptag, value) in row] for row in d['recipients']]
+
+        # recipients
+        recipients = [[SPropValue(proptag, value) for (proptag, value, nameid) in row] for row in d['recipients']]
         self.mapiobj.ModifyRecipients(0, recipients)
-        attachments = [[SPropValue(proptag, value) for (proptag, value) in row] for row in d['attachments']]
-        for props in attachments:
+
+        # attachments
+        for props, data in d['attachments']:
+            props = [SPropValue(proptag, value) for (proptag, value, nameid) in props]
             (id_, attach) = self.mapiobj.CreateAttach(None, 0)
             attach.SetProps(props)
-            if id_ in d['attach_data']: # XXX
-                data = d['attach_data'][id_] 
-                stream = attach.OpenProperty(PR_ATTACH_DATA_BIN, IID_IStream, 0, MAPI_MODIFY | MAPI_CREATE)
-                stream.Write(data)
-                stream.Commit(0)
-                attach.SaveChanges(KEEP_OPEN_READWRITE)
+            stream = attach.OpenProperty(PR_ATTACH_DATA_BIN, IID_IStream, 0, MAPI_MODIFY | MAPI_CREATE)
+            stream.Write(data)
+            stream.Commit(0)
+            attach.SaveChanges(KEEP_OPEN_READWRITE)
         self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE) # XXX needed?
 
     def load(self, f):
@@ -2269,7 +2299,10 @@ class Attachment(object):
 
     @property
     def number(self):
-        return HrGetOneProp(self.att, PR_ATTACH_NUM).Value
+        try:
+            return HrGetOneProp(self.att, PR_ATTACH_NUM).Value
+        except MAPIErrorNotFound:
+            return 0
 
     @property
     def mimetype(self):
