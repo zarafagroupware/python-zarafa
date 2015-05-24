@@ -72,6 +72,7 @@ import sys
 import StringIO
 import struct
 import threading
+import time
 import traceback
 import mailbox
 from email.parser import Parser
@@ -83,6 +84,7 @@ from MAPI.Util import *
 from MAPI.Util.Generators import *
 import MAPI.Util.AddressBook
 import MAPI.Tags
+import MAPI.Time
 import _MAPICore
 import inetmapi
 import icalmapi
@@ -362,8 +364,13 @@ Wrapper around MAPI properties
 
     def get_value(self):
         if self._value is None:
-            if self.type_ == PT_SYSTIME: # XXX generalize, property, timezones?
+            if self.type_ == PT_SYSTIME: # XXX generalize, property?
+                #
+                # The datetime object is of "naive" type, has local time and
+                # no TZ info. :-(
+                #
                 self._value = datetime.datetime.fromtimestamp(self.mapiobj.Value.unixtime)
+                
             else:
                 self._value = self.mapiobj.Value
         return self._value
@@ -371,7 +378,8 @@ Wrapper around MAPI properties
     def set_value(self, value):
         self._value = value
         if self.type_ == PT_SYSTIME:
-            value = MAPI.Time.unixtime(time.mktime(value.timetuple())) # XXX timezones?
+            # Timezones are handled.
+            value = MAPI.Time.unixtime(time.mktime(value.timetuple()))
         self._parent_mapiobj.SetProps([SPropValue(self.proptag, value)])
         self._parent_mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
     value = property(get_value, set_value)
@@ -1261,7 +1269,7 @@ class Folder(object):
     @property
     def parent(self):
         """Return :class:`parent <Folder>` or None"""
-        # PR_PARENT_ENTRYID for the message store root folder is it's own PR_ENTRYID
+        # PR_PARENT_ENTRYID for the message store root folder is its own PR_ENTRYID
         try:
             return Folder(self.store, self.prop(PR_PARENT_ENTRYID).value)
         except MAPIErrorNotFound: # XXX: Should not happen
@@ -1435,7 +1443,7 @@ class Folder(object):
         """
 
         try:
-            folder = Folder(self, key.decode('hex')) # XXX: What about creat=True, do we want to check if it's valid entryid and then create the folder?
+            folder = Folder(self, key.decode('hex')) # XXX: What about creat=True, do we want to check if it is a valid entryid and then create the folder?
             return folder
         except (MAPIErrorNotFound, TypeError):
             matches = [f for f in self.folders(recurse=recurse) if f.entryid == key or f.name == key]
@@ -2144,6 +2152,40 @@ class Outofoffice(object):
     @message.setter
     def message(self, value):
         self.store.mapiobj.SetProps([SPropValue(PR_EC_OUTOFOFFICE_MSG, value)])
+
+    @property
+    def start(self):
+        """ Out-of-office is activated from the particular datetime onwards """
+        try:
+            return self.store.prop(PR_EC_OUTOFOFFICE_FROM).value
+        except MAPIErrorNotFound:
+            return None
+
+    @start.setter
+    def start(self, value):
+        if value is None:
+            self.store.mapiobj.DeleteProps([PR_EC_OUTOFOFFICE_FROM])
+        else:
+            value = MAPI.Time.unixtime(time.mktime(value.timetuple()))
+            self.store.mapiobj.SetProps([SPropValue(PR_EC_OUTOFOFFICE_FROM, value)])
+        self.store.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
+
+    @property
+    def end(self):
+        """ Out-of-office is activated until the particular datetime """
+        try:
+            return self.store.prop(PR_EC_OUTOFOFFICE_UNTIL).value
+        except MAPIErrorNotFound:
+            return None
+
+    @end.setter
+    def end(self, value):
+        if value is None:
+            self.store.mapiobj.DeleteProps([PR_EC_OUTOFOFFICE_UNTIL])
+        else:
+            value = MAPI.Time.unixtime(time.mktime(value.timetuple()))
+            self.store.mapiobj.SetProps([SPropValue(PR_EC_OUTOFOFFICE_UNTIL, value)])
+        self.store.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
     def __unicode__(self):
         return u'Outofoffice(%s)' % self.subject
