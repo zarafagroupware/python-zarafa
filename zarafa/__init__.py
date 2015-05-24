@@ -105,12 +105,6 @@ except NameError:
         if K.startswith('PR_'):
             REV_TAG[V] = K
 
-
-# Define this tags, because these are not defined in MAPI/Tags.py
-PR_EC_OUTOFOFFICE_SUBJECT           = PROP_TAG(PT_TSTRING,    PR_EC_BASE+0x62)
-PR_EC_OUTOFOFFICE_MSG               = PROP_TAG(PT_TSTRING,    PR_EC_BASE+0x61)
-PR_EC_OUTOFOFFICE                   = PROP_TAG(PT_BOOLEAN,    PR_EC_BASE+0x60)
-
 PS_INTERNET_HEADERS = DEFINE_OLEGUID(0x00020386, 0, 0)
 NAMED_PROPS_INTERNET_HEADERS = [MAPINAMEID(PS_INTERNET_HEADERS, MNID_STRING, u'x-original-to'),]
 
@@ -389,7 +383,7 @@ Wrapper around MAPI properties
         if self.named:
             return '%s:%s' % (self.namespace, self.name)
         else:
-            return self.idname
+            return self.idname if self.idname else '' # FIXME: should never be None
 
     @property
     def strval(self):
@@ -484,7 +478,7 @@ class Table(object):
     def sort(self, tags):
         if not isinstance(tags, tuple):
             tags = (tags,)
-        self.mapitable.SortTable(SSortOrderSet([SSort(abs(tag), TABLE_SORT_ASCEND if tag > 0 else TABLE_SORT_DESCEND) for tag in tags], 0, 0), 0) # XXX no unicode flags?
+        self.mapitable.SortTable(SSortOrderSet([SSort(abs(tag), TABLE_SORT_DESCEND if tag < 0 else TABLE_SORT_ASCEND) for tag in tags], 0, 0), 0)
 
     def __iter__(self):
         return self.rows()
@@ -1363,6 +1357,7 @@ class Folder(object):
             setattr(item, key, val)
         return item
 
+    # XXX: always hard delete or but we should also provide 'softdelete' which moves the item to the wastebasket
     def empty(self, recurse=True, associated=False):
         """ Delete folder contents
 
@@ -2121,11 +2116,12 @@ class Outofoffice(object):
         try:
             return self.store.prop(PR_EC_OUTOFOFFICE).value
         except MAPIErrorNotFound:
-            return None
+            return False
 
     @enabled.setter
     def enabled(self, value):
         self.store.mapiobj.SetProps([SPropValue(PR_EC_OUTOFOFFICE, value)])
+        self.store.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
     @property
     def subject(self):
@@ -2139,6 +2135,7 @@ class Outofoffice(object):
     @subject.setter
     def subject(self, value):
         self.store.mapiobj.SetProps([SPropValue(PR_EC_OUTOFOFFICE_SUBJECT, value)])
+        self.store.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
     @property
     def message(self):
@@ -2152,6 +2149,7 @@ class Outofoffice(object):
     @message.setter
     def message(self, value):
         self.store.mapiobj.SetProps([SPropValue(PR_EC_OUTOFOFFICE_MSG, value)])
+        self.store.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
     @property
     def start(self):
@@ -2223,7 +2221,7 @@ class Address:
             try:
                 mailuser = self.server.mapisession.OpenEntry(self.entryid, None, 0)
                 return self.server.user(HrGetOneProp(mailuser, PR_ACCOUNT).Value).email # XXX PR_SMTP_ADDRESS_W from mailuser?
-            except (ZarafaException, MAPIErrorNotFound): # XXX what to do with removed user (OpenEntry fails for removed user)
+            except ZarafaException:
                 return None # XXX 'Support Delft'??
         else:
             return self._email
