@@ -154,6 +154,19 @@ ADDR_PROPS = [
     (PR_RCVD_REPRESENTING_ADDRTYPE_W, PR_RCVD_REPRESENTING_EMAIL_ADDRESS_W, PR_RCVD_REPRESENTING_ENTRYID, PR_RCVD_REPRESENTING_NAME_W, PR_RCVD_REPRESENTING_SEARCH_KEY),
 ]
 
+# Common/RecurrenceState.h
+# Defines for recurrence exceptions
+ARO_SUBJECT =	0x0001
+ARO_MEETINGTYPE = 0x0002
+ARO_REMINDERDELTA = 	0x0004
+ARO_REMINDERSET	= 0x0008
+ARO_LOCATION = 0x0010
+ARO_BUSYSTATUS	= 0x0020
+ARO_ATTACHMENT = 0x0040
+ARO_SUBTYPE = 0x0080
+ARO_APPTCOLOR = 0x0100
+ARO_EXCEPTIONAL_BODY = 0x0200
+
 def _stream(mapiobj, proptag):
     stream = mapiobj.OpenProperty(proptag, IID_IStream, 0, 0)
     data = []
@@ -2173,6 +2186,7 @@ class Recurrence:
     def __init__(self, item): # XXX just readable start/end for now
         from dateutil.rrule import WEEKLY, DAILY, MONTHLY, MO, TU, TH, FR, WE, SA, SU, rrule, rruleset
         # TODO: add check if we actually have a recurrence, otherwise we throw a mapi exception which might not be desirable
+        self.item = item
         value = item.prop('appointment:33302').value # recurrencestate
         SHORT, LONG = 2, 4
         pos = 5 * SHORT + 3 * LONG 
@@ -2183,21 +2197,9 @@ class Recurrence:
         self.first_datetime = _unpack_long(value, 5 * SHORT)
         self.period = _unpack_long(value , 5 * SHORT + LONG) # 12 for year, coincedence?
 
-        # TODO: use a library
-        weekdays = {0: 'Sunday', 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday'}
-        rrule_weekdays = {0: SU, 1: MO, 2: TU, 3: WE, 4: TH, 5: FR, 6: SA} # FIXME: remove above
-        # FIXME: somehow set a property with the pattern
         if self.patterntype == 1: # Weekly recurrence
             self.pattern = _unpack_long(value, pos) # WeekDays
             pos += LONG
-
-            # TODO: global function for month/yearly?
-            represenation = []
-            for index, week in weekdays.iteritems():
-                if (self.pattern >> index ) & 1:
-                    represenation.append(week)
-            self.week_pattern = ', '.join(represenation) # FIXME: name?
-
         if self.patterntype in (2, 4, 10, 12): # Monthly recurrence
             self.pattern = _unpack_long(value, pos) # Day Of Month
             pos += LONG
@@ -2241,18 +2243,6 @@ class Recurrence:
         self.endtime_offset = _unpack_long(value, pos) # XXX: type?
         pos += LONG
 
-        # Common/RecurrenceState.h
-        # XXX: Move somewhere else..
-        ARO_SUBJECT =	0x0001
-        ARO_MEETINGTYPE = 0x0002
-        ARO_REMINDERDELTA = 	0x0004
-        ARO_REMINDERSET	= 0x0008
-        ARO_LOCATION = 0x0010
-        ARO_BUSYSTATUS	= 0x0020
-        ARO_ATTACHMENT = 0x0040
-        ARO_SUBTYPE = 0x0080
-        ARO_APPTCOLOR = 0x0100
-        ARO_EXCEPTIONAL_BODY = 0x0200
         
         # Exceptions
         self.exception_count = _unpack_short(value, pos)
@@ -2327,7 +2317,10 @@ class Recurrence:
         self.recurrence_pattern = item.prop('appointment:33330').value
         self.invited = item.prop('appointment:33321').value
 
-        # FIXME: should merge with above code
+
+        # FIXME; doesn't dateutil have a list of this?
+        rrule_weekdays = {0: SU, 1: MO, 2: TU, 3: WE, 4: TH, 5: FR, 6: SA} # FIXME: remove above
+
         # FIXME: add DAILY, patterntype == 0
         # FIXME: merge exception details with normal appointment data to recurrence.occurences() (Class occurence)
         if self.patterntype == 1: # WEEKLY
@@ -2353,8 +2346,7 @@ class Recurrence:
             self.recurrences = rrule(MONTHLY, dtstart=self.start, until=self.end, bymonthday=self.pattern, interval=self.period)
             # self.pattern is either day of month or 
         elif self.patterntype == 3: # MONTHY, YEARLY
-            print "weekday", weekday
-            print "weeknumber", weeknumber
+            # Yearly, the last XX of YY
             self.recurrences = rrule(MONTHLY, dtstart=self.start, until=self.end, interval=self.period)
 
     def __unicode__(self):
