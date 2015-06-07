@@ -167,6 +167,11 @@ ARO_SUBTYPE = 0x0080
 ARO_APPTCOLOR = 0x0100
 ARO_EXCEPTIONAL_BODY = 0x0200
 
+# location of entryids in PR_IPM_OL2007_ENTRYIDS
+RSF_PID_RSS_SUBSCRIPTION = 0x8001
+RSF_PID_SUGGESTED_CONTACTS = 0x8008
+
+
 def _stream(mapiobj, proptag):
     stream = mapiobj.OpenProperty(proptag, IID_IStream, 0, 0)
     data = []
@@ -309,6 +314,27 @@ def _rectime_to_unixtime(t):
 
 def _unixtime_to_rectime(t):
     return int(t/60) + 194074560
+
+def _extract_ipm_ol2007_entryids(blob, offset):
+    # Extracts entryid's from PR_IPM_OL2007_ENTRYIDS blob using
+    # logic from common/Util.cpp Util::ExtractAdditionalRenEntryID.
+    pos = 0
+    while True:
+        blocktype = _unpack_short(blob, pos)
+        if blocktype == 0:
+            break
+        pos += 2
+
+        totallen = _unpack_short(blob, pos)
+        pos += 2
+
+        if blocktype == offset:
+            pos += 2 # skip check
+            sublen = _unpack_short(blob, pos)
+            pos += 2
+            return blob[pos:pos+sublen].encode('hex').upper()
+        else:
+            pos += totallen
 
 class ZarafaException(Exception):
     pass
@@ -1159,6 +1185,22 @@ class Store(object):
             ipmsubtreeid = HrGetOneProp(self.mapiobj, PR_IPM_SUBTREE_ENTRYID).Value
 
         return Folder(self, ipmsubtreeid)
+
+    @property
+    def suggested_contacts(self):
+        """ :class`Folder` designated as Suggested contacts"""
+
+        entryid = _extract_ipm_ol2007_entryids(self.inbox.prop(PR_IPM_OL2007_ENTRYIDS).value, RSF_PID_SUGGESTED_CONTACTS)
+
+        return Folder(self, entryid.decode('hex'))
+
+    @property
+    def rss(self):
+        """ :class`Folder` designated as RSS items"""
+
+        entryid = _extract_ipm_ol2007_entryids(self.inbox.prop(PR_IPM_OL2007_ENTRYIDS).value, RSF_PID_RSS_SUBSCRIPTION)
+
+        return Folder(self, entryid.decode('hex'))
 
     @property
     def user(self):
