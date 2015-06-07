@@ -3002,13 +3002,15 @@ def logger(service, options=None, stdout=False, config=None, name=''):
     log_level = _loglevel(options, config)
     if name:
         log_file = log_file.replace(service, name) # XXX
-    if log_method == 'file':
+    fh = None
+    if log_method == 'file' and log_file != '-':
         fh = logging.handlers.WatchedFileHandler(log_file)
     elif log_method == 'syslog':
         fh = logging.handlers.SysLogHandler(address='/dev/log')
-    fh.setLevel(log_level)
-    fh.setFormatter(formatter)
-    logger.addHandler(fh)
+    if fh:
+        fh.setLevel(log_level)
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
     ch = logging.StreamHandler() # XXX via options?
     ch.setLevel(log_level)
     ch.setFormatter(formatter)
