@@ -1866,6 +1866,12 @@ class Item(object):
             return False
 
     @property
+    def read(self):
+        """ Boolean which shows if a message has been read """
+
+        return self.prop(PR_MESSAGE_FLAGS).value & MSGFLAG_READ > 0
+
+    @property
     def folder(self):
         """ Parent :class:`Folder` of an item """
 
