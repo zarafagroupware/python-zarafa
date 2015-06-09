@@ -1867,9 +1867,16 @@ class Item(object):
 
     @property
     def read(self):
-        """ Boolean which shows if a message has been read """
+        """ Return boolean which shows if a message has been read """
 
         return self.prop(PR_MESSAGE_FLAGS).value & MSGFLAG_READ > 0
+
+    @read.setter
+    def read(self, value):
+        if value:
+            self.mapiobj.SetReadFlag(0)
+        else:
+            self.mapiobj.SetReadFlag(CLEAR_READ_FLAG)
 
     @property
     def folder(self):
