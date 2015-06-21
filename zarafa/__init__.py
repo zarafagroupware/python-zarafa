@@ -3004,6 +3004,10 @@ def daemonize(func, options=None, foreground=False, args=[], log=None, config=No
 #                    if not sys.argv[0] in cmdline[:2]:
 #                        # break the lock if it's another process
 #                        pidfile.break_lock()
+        if uid is not None and gid is not None:
+            for h in log.handlers:
+                if isinstance(h, logging.handlers.WatchedFileHandler):
+                    os.chown(h.baseFilename, uid, gid)
         with daemon.DaemonContext(
                 pidfile=pidfile,
                 uid=uid,
