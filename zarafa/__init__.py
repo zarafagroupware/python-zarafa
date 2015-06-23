@@ -964,12 +964,13 @@ class Group(object):
 
     def _update(self, **kwargs):
         # XXX: crashes server on certain characters...
-        name = kwargs.get('name', self.name)
+        self._name = kwargs.get('name', self.name)
         fullname = kwargs.get('fullname', self.fullname)
         email = kwargs.get('email', self.email)
         hidden = kwargs.get('hidden', self.hidden)
-        group = ECGROUP(name, fullname, email, int(hidden), self._ecgroup.GroupID)
+        group = ECGROUP(self._name, fullname, email, int(hidden), self._ecgroup.GroupID)
         self.server.sa.SetGroup(group, MAPI_UNICODE)
+        self._ecgroup = self.server.sa.GetGroup(self.server.sa.ResolveGroupName(self._name, MAPI_UNICODE), MAPI_UNICODE)
 
     def __unicode__(self):
         return u"Group('%s')" % self.name
