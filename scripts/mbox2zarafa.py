@@ -39,7 +39,7 @@ def main():
     for key, msg in mbox.iteritems():
         # Messages without Message-Id are usually spam so skip them
         if msg['Message-Id'] is None:
-            break
+           continue
 
         if not msg['Message-Id'] in allheaders:
 
