@@ -92,3 +92,7 @@ Example to show how to backup smime certs as pkcs12 files
 imap2zarafa.py
 ==============
 Simple Imap 2 Zarafa migrator.
+
+mbox2zarafa.py
+==============
+Simple Mbox 2 Zarafa migrator.
