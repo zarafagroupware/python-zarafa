@@ -1219,17 +1219,20 @@ class Store(object):
             :param key: name or entryid
         """
 
-        try:
-            folder = Folder(self, key.decode('hex'))
-            return folder
-        except (MAPIErrorNotFound, TypeError):
-            matches = [f for f in self.folders(system=True, recurse=recurse) if f.entryid == key or f.name == key]
-            if len(matches) == 0:
-                raise ZarafaNotFoundException("no such folder: '%s'" % key)
-            elif len(matches) > 1:
-                raise ZarafaNotFoundException("multiple folders with name/entryid '%s'" % key)
-            else:
-                return matches[0]
+        if len(key) == 96: # PR_ENTRYID is always 96
+            try:
+                folder = Folder(self, key.decode('hex'))
+                return folder
+            except (MAPIErrorInvalidEntryid, MAPIErrorNotFound, TypeError):
+                pass
+
+        matches = [f for f in self.folders(system=True, recurse=recurse) if f.entryid == key or f.name == key]
+        if len(matches) == 0:
+            raise ZarafaNotFoundException("no such folder: '%s'" % key)
+        elif len(matches) > 1:
+            raise ZarafaNotFoundException("multiple folders with name/entryid '%s'" % key)
+        else:
+            return matches[0]
 
     def get_folder(self, key):
         """ Return :class:`folder <Folder>` with given name/entryid or *None* if not found """
@@ -1549,20 +1552,22 @@ class Folder(object):
             :param key: name or entryid
         """
 
-        try:
-            folder = Folder(self, key.decode('hex')) # XXX: What about creat=True, do we want to check if it is a valid entryid and then create the folder?
-            return folder
-        except (MAPIErrorNotFound, TypeError):
-            matches = [f for f in self.folders(recurse=recurse) if f.entryid == key or f.name == key]
-            if len(matches) == 0:
-                if create:
-                    return self.create_folder(key) # XXX assuming no entryid..
-                else:
-                    raise ZarafaNotFoundException("no such folder: '%s'" % key)
-            elif len(matches) > 1:
-                raise ZarafaNotFoundException("multiple folders with name/entryid '%s'" % key)
+        if len(key) == 96:
+            try:
+                folder = Folder(self, key.decode('hex')) # XXX: What about creat=True, do we want to check if it is a valid entryid and then create the folder?
+                return folder
+            except (MAPIErrorInvalidEntryid, MAPIErrorNotFound, TypeError):
+                pass
+        matches = [f for f in self.folders(recurse=recurse) if f.entryid == key or f.name == key]
+        if len(matches) == 0:
+            if create:
+                return self.create_folder(key) # XXX assuming no entryid..
             else:
-                return matches[0]
+                raise ZarafaNotFoundException("no such folder: '%s'" % key)
+        elif len(matches) > 1:
+            raise ZarafaNotFoundException("multiple folders with name/entryid '%s'" % key)
+        else:
+            return matches[0]
 
     def get_folder(self, key):
         """ Return :class:`folder <Folder>` with given name/entryid or *None* if not found """
