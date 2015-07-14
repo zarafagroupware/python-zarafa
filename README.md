@@ -9,13 +9,32 @@ python-zarafa depends on the following modules:
 * [python-daemon](https://pypi.python.org/pypi/python-daemon/)
 * [python-vobject](http://vobject.skyhouseconsulting.com/) Optional dependency for exporting MAPI items to vcard format (for contact.vcf())
 
-Please keep in mind that this API is written to work on the latest version of Zarafa.  
-In result certain features may not work on older versions.
+# Preface
+Please keep in mind that this API is written to work on the latest version of Zarafa.
+Certain features may not work on older versions.
+The version on GitHub is taken directly from our 'trunk' branch.
+
+> __Currently it is not recommended to install this release on a Zarafa server which runs a Zarafa release which provides a python-zarafa package such as Zarafa 7.2.__
+
+In certain cases the system installation of python-zarafa can cause an issue in existing provided software.
 
 # Installation
 To install python-zarafa just simply run the following command.
-
-    python setup.py install
+```
+$ python setup.py install
+```
+# Stand alone usage
+Certain scripts require the more advanced features offered by the more recent version on GitHub.
+If you require the more advanced features you can do the following.
+Extract the download from GitHub.
+````
+$ mkdir python-zarafa
+$ cp python-zarafa-master/zarafa/__init__.py python-zarafa/zarafa.py
+$ cp myadvancedscript.py python-zarafa
+$ cd python-zarafa
+$ ./myadvancesscript.py
+````
+This way you can use the GitHub version with your scripts without interfering whith the python-zarafa as provided by  Zarafa.
 
 # Documentation
 To generate documentation just simply run the following command or visit the [following url](http://doc.zarafa.com/trunk/Python_Zarafa/).
