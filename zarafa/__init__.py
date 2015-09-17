@@ -1723,7 +1723,7 @@ class Item(object):
                     SPropValue(PR_ADDRTYPE, 'SMTP'), SPropValue(PR_BODY, ''),
                     SPropValue(PR_LOCALITY, ''), SPropValue(PR_STATE_OR_PROVINCE, ''),
                     SPropValue(PR_BUSINESS_FAX_NUMBER, ''), SPropValue(PR_COMPANY_NAME, ''),
-                    SPropValue(0x8130001E, fullname), SPropValue(0x8132001E, 'SMTP'),
+                    SPropValue(0x8130001F, fullname), SPropValue(0x8132001E, 'SMTP'),
                     SPropValue(0x8133001E, email), SPropValue(0x8134001E, ''),
                     SPropValue(0x81350102, server.ab.CreateOneOff('', 'SMTP', email, 0)), # XXX
                     SPropValue(PR_GIVEN_NAME, ''), SPropValue(PR_MIDDLE_NAME, ''),
