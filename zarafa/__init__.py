@@ -957,7 +957,10 @@ class Group(object):
         return bin2hex(self._ecgroup.GroupID)
 
     def add_user(self, user):
-        self.server.sa.AddGroupUser(self._ecgroup.GroupID, user._ecuser.UserID)
+        if isinstance(user, Group):
+            self.server.sa.AddGroupUser(self._ecgroup.GroupID, user._ecgroup.GroupID)
+        else:
+            self.server.sa.AddGroupUser(self._ecgroup.GroupID, user._ecuser.UserID)
 
     def remove_user(self, user):
         self.server.sa.DeleteGroupUser(self._ecgroup.GroupID, user._ecuser.UserID)
