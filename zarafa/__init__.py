@@ -2108,6 +2108,8 @@ class Item(object):
                     email_addr = HrGetOneProp(mailuser, PR_SMTP_ADDRESS_W).Value
                 except MAPIErrorNotFound: # XXX deleted user, or no email address? or user with multiple entryids..heh?
                     continue
+                except MAPIErrorInterfaceNotSupported: # XXX ZARAFA group?
+                    continue
                 self.server._smtp_cache[eid] = email_addr
             tag_data[addrtype][1] = u'SMTP'
             if email in tag_data:
