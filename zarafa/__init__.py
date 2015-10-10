@@ -231,16 +231,22 @@ def _state(mapiobj, associated=False):
     stream.Seek(0, MAPI.STREAM_SEEK_SET)
     return bin2hex(stream.Read(0xFFFFF))
 
-def _sync(server, syncobj, importer, state, log, max_changes, associated=False):
+def _sync(server, syncobj, importer, state, log, max_changes, associated=False, window=None):
     importer = TrackingContentsImporter(server, importer, log)
     exporter = syncobj.OpenProperty(PR_CONTENTS_SYNCHRONIZER, IID_IExchangeExportChanges, 0, 0)
     stream = IStream()
     stream.Write(state.decode('hex'))
     stream.Seek(0, MAPI.STREAM_SEEK_SET)
+
+    restriction = None
+    if window:
+        # sync window of last N seconds
+        restriction = SPropertyRestriction(RELOP_GE, PR_MESSAGE_DELIVERY_TIME, SPropValue(PR_MESSAGE_DELIVERY_TIME, MAPI.Time.unixtime(int(time.time()) - window)))
+
     if associated:
-        exporter.Config(stream, SYNC_NORMAL | SYNC_ASSOCIATED | SYNC_UNICODE, importer, None, None, None, 0)
+        exporter.Config(stream, SYNC_NORMAL | SYNC_ASSOCIATED | SYNC_UNICODE, importer, restriction, None, None, 0)
     else:
-        exporter.Config(stream, SYNC_NORMAL | SYNC_UNICODE, importer, None, None, None, 0)
+        exporter.Config(stream, SYNC_NORMAL | SYNC_UNICODE, importer, restriction, None, None, 0)
     step = retry = changes = 0
     while True:
         try:
@@ -894,7 +900,7 @@ Looks at command-line to see if another server address or other related options 
 
         return _state(self.mapistore)
 
-    def sync(self, importer, state, log=None, max_changes=None):
+    def sync(self, importer, state, log=None, max_changes=None, window=None):
         """ Perform synchronization against server node
 
         :param importer: importer instance with callbacks to process changes
@@ -903,7 +909,7 @@ Looks at command-line to see if another server address or other related options 
         """
 
         importer.store = None
-        return _sync(self, self.mapistore, importer, state, log or self.log, max_changes)
+        return _sync(self, self.mapistore, importer, state, log or self.log, max_changes, window=window)
 
     def __unicode__(self):
         return u'Server(%s)' % self.server_socket
@@ -1643,7 +1649,7 @@ class Folder(object):
 
         return _state(self.mapiobj, self.content_flag == MAPI_ASSOCIATED)
 
-    def sync(self, importer, state=None, log=None, max_changes=None, associated=False):
+    def sync(self, importer, state=None, log=None, max_changes=None, associated=False, window=None):
         """ Perform synchronization against folder
 
         :param importer: importer instance with callbacks to process changes
@@ -1654,7 +1660,7 @@ class Folder(object):
         if state is None:
             state = (8*'\0').encode('hex').upper()
         importer.store = self.store
-        return _sync(self.store.server, self.mapiobj, importer, state, log, max_changes, associated)
+        return _sync(self.store.server, self.mapiobj, importer, state, log, max_changes, associated, window=window)
 
     def readmbox(self, location):
         for message in mailbox.mbox(location):
