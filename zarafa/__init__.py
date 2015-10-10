@@ -2102,7 +2102,7 @@ class Item(object):
         for addrtype, email, entryid, name, searchkey in ADDR_PROPS:
             if addrtype not in tag_data or entryid not in tag_data or name not in tag_data: 
                 continue
-            if tag_data[addrtype][1] in (u'SMTP', u'MAPIDPL'): # XXX MAPIDPL==distlist.. can we just dump this?
+            if tag_data[addrtype][1] in (u'SMTP', u'MAPIPDL'): # XXX MAPIPDL==distlist.. can we just dump this?
                 continue
             email_addr = self.server._smtp_cache.get(tag_data[entryid][1])
             if not email_addr: # XXX deleted user, or no email address? or user with multiple entryids..heh?
