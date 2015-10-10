@@ -1693,6 +1693,7 @@ class Item(object):
     def __init__(self, parent=None, eml=None, ics=None, vcf=None, load=None, loads=None, create=False, mapiobj=None):
         # TODO: self.folder fix this!
         self.emlfile = eml
+        self._folder = None
         if isinstance(parent, Folder): 
             self._folder = parent
         # XXX
