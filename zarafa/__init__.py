@@ -2607,8 +2607,10 @@ class Attachment(object):
     @property
     def size(self):
         """ Size """
+        # XXX size of the attachment object, so more than just the attachment data
+        # XXX (useful when calculating store size, for example.. sounds interesting to fix here)
         try:
-            return int(HrGetOneProp(self.att, PR_ATTACH_SIZE).Value) # XXX why is this not equal to len(data)??
+            return int(HrGetOneProp(self.att, PR_ATTACH_SIZE).Value)
         except MAPIErrorNotFound:
             return 0 # XXX
         
