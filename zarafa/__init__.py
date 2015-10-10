@@ -2092,21 +2092,23 @@ class Item(object):
             self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
     def _convert_to_smtp(self, props, tag_data):
-        if not hasattr(self.server, '_smtp_cache'): # XXX gross speed hack for now
-            smtp_cache = {}
-            for row in self.server.gab_table().dict_rows():
-                entryid, smtp = row.get(PR_ENTRYID), row.get(PR_SMTP_ADDRESS)
-                if entryid and smtp:
-                    smtp_cache[entryid] = unicode(smtp) # XXX unicode
-            self.server._smtp_cache = smtp_cache
+        if not hasattr(self.server, '_smtp_cache'): # XXX speed hack, discuss
+            self.server._smtp_cache = {}
         for addrtype, email, entryid, name, searchkey in ADDR_PROPS:
             if addrtype not in tag_data or entryid not in tag_data or name not in tag_data: 
                 continue
             if tag_data[addrtype][1] in (u'SMTP', u'MAPIPDL'): # XXX MAPIPDL==distlist.. can we just dump this?
                 continue
-            email_addr = self.server._smtp_cache.get(tag_data[entryid][1])
-            if not email_addr: # XXX deleted user, or no email address? or user with multiple entryids..heh?
-                continue
+            eid = tag_data[entryid][1]
+            if eid in self.server._smtp_cache:
+                email_addr = self.server._smtp_cache[eid]
+            else:
+                try:
+                    mailuser = self.server.ab.OpenEntry(eid, IID_IMailUser, 0)
+                    email_addr = HrGetOneProp(mailuser, PR_SMTP_ADDRESS_W).Value
+                except MAPIErrorNotFound: # XXX deleted user, or no email address? or user with multiple entryids..heh?
+                    continue
+                self.server._smtp_cache[eid] = email_addr
             tag_data[addrtype][1] = u'SMTP'
             if email in tag_data:
                 tag_data[email][1] = email_addr
