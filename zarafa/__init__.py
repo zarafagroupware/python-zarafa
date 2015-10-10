@@ -171,18 +171,24 @@ ARO_EXCEPTIONAL_BODY = 0x0200
 RSF_PID_RSS_SUBSCRIPTION = 0x8001
 RSF_PID_SUGGESTED_CONTACTS = 0x8008
 
-
 def _stream(mapiobj, proptag):
     stream = mapiobj.OpenProperty(proptag, IID_IStream, 0, 0)
+
+    block_size = 0x10000 # 1MB
+
     data = []
     while True:
-        blup = stream.Read(0xFFFFF) # 1 MB
-        if len(blup) == 0:
+        temp = stream.Read(block_size)
+        data.append(temp)
+
+        if len(temp) < block_size:
             break
-        data.append(blup)
+
     data = ''.join(data)
+
     if PROP_TYPE(proptag) == PT_UNICODE:
         data = data.decode('utf-32le') # under windows them be utf-16le?
+
     return data
 
 def _prop(self, mapiobj, proptag):
