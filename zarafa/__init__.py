@@ -3169,35 +3169,35 @@ Available options:
 -V, --version: Show program version and exit
 """
 
-    parser = optparse.OptionParser()
+    parser = optparse.OptionParser(formatter=optparse.IndentedHelpFormatter(max_help_position=42))
 
-    if 'c' in options: parser.add_option('-c', '--config', dest='config_file', help='Load settings from FILE', metavar='FILE')
+    if 'c' in options: parser.add_option('-c', '--config', dest='config_file', help='load settings from FILE', metavar='FILE')
 
-    if 's' in options: parser.add_option('-s', '--server-socket', dest='server_socket', help='Connect to server SOCKET', metavar='SOCKET')
+    if 's' in options: parser.add_option('-s', '--server-socket', dest='server_socket', help='connect to server SOCKET', metavar='SOCKET')
     if 'k' in options: parser.add_option('-k', '--ssl-key', dest='sslkey_file', help='SSL key file', metavar='FILE')
     if 'p' in options: parser.add_option('-p', '--ssl-pass', dest='sslkey_pass', help='SSL key password', metavar='PASS')
-    if 'U' in options: parser.add_option('-U', '--auth-user', dest='auth_user', help='Login as user', metavar='NAME')
-    if 'P' in options: parser.add_option('-P', '--auth-pass', dest='auth_pass', help='Login with password', metavar='PASS')
+    if 'U' in options: parser.add_option('-U', '--auth-user', dest='auth_user', help='login as user', metavar='NAME')
+    if 'P' in options: parser.add_option('-P', '--auth-pass', dest='auth_pass', help='login with password', metavar='PASS')
 
-    if 'C' in options: parser.add_option('-C', '--company', dest='companies', action='append', default=[], help='Run program for specific company', metavar='NAME')
-    if 'u' in options: parser.add_option('-u', '--user', dest='users', action='append', default=[], help='Run program for specific user', metavar='NAME')
-    if 'S' in options: parser.add_option('-S', '--store', dest='stores', action='append', default=[], help='Run program for specific store', metavar='GUID')
-    if 'f' in options: parser.add_option('-f', '--folder', dest='folders', action='append', default=[], help='Run program for specific folder', metavar='NAME')
+    if 'C' in options: parser.add_option('-C', '--company', dest='companies', action='append', default=[], help='run program for specific company', metavar='NAME')
+    if 'u' in options: parser.add_option('-u', '--user', dest='users', action='append', default=[], help='run program for specific user', metavar='NAME')
+    if 'S' in options: parser.add_option('-S', '--store', dest='stores', action='append', default=[], help='run program for specific store', metavar='GUID')
+    if 'f' in options: parser.add_option('-f', '--folder', dest='folders', action='append', default=[], help='run program for specific folder', metavar='NAME')
 
-    if 'b' in options: parser.add_option('-b', '--period-begin', dest='period_begin', action='callback', help='Run program for specific period', callback=_parse_date, metavar='DATE', type='str')
-    if 'e' in options: parser.add_option('-e', '--period-end', dest='period_end', action='callback', help='Run program for specific period', callback=_parse_date, metavar='DATE', type='str')
+    if 'b' in options: parser.add_option('-b', '--period-begin', dest='period_begin', action='callback', help='run program for specific period', callback=_parse_date, metavar='DATE', type='str')
+    if 'e' in options: parser.add_option('-e', '--period-end', dest='period_end', action='callback', help='run program for specific period', callback=_parse_date, metavar='DATE', type='str')
 
-    if 'F' in options: parser.add_option('-F', '--foreground', dest='foreground', action='store_true', help='Run program in foreground')
+    if 'F' in options: parser.add_option('-F', '--foreground', dest='foreground', action='store_true', help='run program in foreground')
 
-    if 'm' in options: parser.add_option('-m', '--modify', dest='modify', action='store_true', help='Enable database modification')
-    if 'l' in options: parser.add_option('-l', '--log-level', dest='loglevel', action='store', help='Set log level', metavar='NAME')
-    if 'v' in options: parser.add_option('-v', '--verbose', dest='verbose', action='store_true', help='Enable verbose output')
-    if 'V' in options: parser.add_option('-V', '--version', dest='version', action='store_true', help='Show program version')
+    if 'm' in options: parser.add_option('-m', '--modify', dest='modify', action='store_true', help='enable database modification')
+    if 'l' in options: parser.add_option('-l', '--log-level', dest='loglevel', action='store', help='set log level', metavar='NAME')
+    if 'v' in options: parser.add_option('-v', '--verbose', dest='verbose', action='store_true', help='enable verbose output')
+    if 'V' in options: parser.add_option('-V', '--version', dest='version', action='store_true', help='show program version')
 
-    if 'w' in options: parser.add_option('-w', '--worker-processes', dest='worker_processes', help='Number of parallel worker processes', metavar='N', type='int')
+    if 'w' in options: parser.add_option('-w', '--worker-processes', dest='worker_processes', help='number of parallel worker processes', metavar='N', type='int')
 
-    if 'I' in options: parser.add_option('-I', '--input-dir', dest='input_dir', help='Specify input directory', metavar='PATH')
-    if 'O' in options: parser.add_option('-O', '--output-dir', dest='output_dir', help='Specify output directory', metavar='PATH')
+    if 'I' in options: parser.add_option('-I', '--input-dir', dest='input_dir', help='specify input directory', metavar='PATH')
+    if 'O' in options: parser.add_option('-O', '--output-dir', dest='output_dir', help='specify output directory', metavar='PATH')
 
     return parser
 
