@@ -2040,7 +2040,7 @@ class Item(object):
 
     @property
     def recurring(self):
-        return item.prop('appointment:33315').value
+        return self.prop('appointment:33315').value
 
     @property
     def recurrence(self):
