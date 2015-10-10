@@ -1241,7 +1241,7 @@ class Store(object):
             except (MAPIErrorInvalidEntryid, MAPIErrorNotFound, TypeError):
                 pass
 
-        matches = [f for f in self.folders(system=True, recurse=recurse) if f.entryid == key or f.name == key]
+        matches = [f for f in self.folders(system=True, recurse=recurse, parse=False) if f.entryid == key or f.name == key]
         if len(matches) == 0:
             raise ZarafaNotFoundException("no such folder: '%s'" % key)
         elif len(matches) > 1:
