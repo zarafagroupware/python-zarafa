@@ -1241,6 +1241,12 @@ class Store(object):
             except (MAPIErrorInvalidEntryid, MAPIErrorNotFound, TypeError):
                 pass
 
+        elif '/' in key: # XXX MAPI folders may contain '/' (and '\') in their names.. handle 96-len case
+            subfolder = self.subtree
+            for name in key.split('/'):
+                subfolder = subfolder.folder(name, recurse=False)
+            return subfolder
+
         matches = [f for f in self.folders(system=True, recurse=recurse, parse=False) if f.entryid == key or f.name == key]
         if len(matches) == 0:
             raise ZarafaNotFoundException("no such folder: '%s'" % key)
@@ -1271,7 +1277,12 @@ class Store(object):
         if parse and getattr(self.server.options, 'folders', None):
             filter_names = self.server.options.folders
 
-        def check_folder(folder):
+            if [n for n in filter_names if '/' in n]: # XXX assume all absolute paths 
+                for path in filter_names:
+                    yield self.folder(path)
+                return
+
+        def check_folder(folder): # XXX do we still want this now that we can deal with paths..
             if filter_names and folder.name not in filter_names:
                 return False
             if mail:
@@ -1573,6 +1584,13 @@ class Folder(object):
                 return folder
             except (MAPIErrorInvalidEntryid, MAPIErrorNotFound, TypeError):
                 pass
+
+        elif '/' in key: # XXX MAPI folders may contain '/' (and '\') in their names..
+            subfolder = self
+            for name in key.split('/'):
+                subfolder = subfolder.folder(name, recurse=False)
+            return subfolder
+
         matches = [f for f in self.folders(recurse=recurse) if f.entryid == key or f.name == key]
         if len(matches) == 0:
             if create:
