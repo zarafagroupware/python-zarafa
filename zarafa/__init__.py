@@ -2600,13 +2600,16 @@ class Attachment(object):
         except MAPIErrorNotFound:
             pass
 
-    def __len__(self):
+    @property
+    def size(self):
         """ Size """
-
         try:
             return int(HrGetOneProp(self.att, PR_ATTACH_SIZE).Value) # XXX why is this not equal to len(data)??
         except MAPIErrorNotFound:
-            pass
+            return 0 # XXX
+        
+    def __len__(self):
+        return self.size
 
     @property
     def data(self):
