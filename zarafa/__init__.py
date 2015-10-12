@@ -2649,13 +2649,7 @@ class Attachment(object):
         """ Binary data """
 
         if self._data is None:
-            try:
-                method = HrGetOneProp(self.att, PR_ATTACH_METHOD).Value # XXX is this just here to raise an exception?
-            except MAPIErrorNotFound:
-                self._data = ''
-            else:
-                self._data = _stream(self.att, PR_ATTACH_DATA_BIN)
-
+            self._data = _stream(self.att, PR_ATTACH_DATA_BIN)
         return self._data
 
     # file-like behaviour
