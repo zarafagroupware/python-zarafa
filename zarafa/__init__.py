@@ -1247,7 +1247,7 @@ class Store(object):
                 subfolder = subfolder.folder(name, create=create, recurse=False)
             return subfolder
 
-        matches = [f for f in self.folders(system=True, recurse=recurse, parse=False) if f.entryid == key or f.name == key]
+        matches = [f for f in self.root.folders(recurse=recurse) if f.entryid == key or f.name == key]
         if len(matches) == 0:
             raise ZarafaNotFoundException("no such folder: '%s'" % key)
         elif len(matches) > 1:
@@ -1263,7 +1263,7 @@ class Store(object):
         except ZarafaException:
             pass
 
-    def folders(self, recurse=True, system=False, mail=False, parse=True): # XXX mail flag semantic difference?
+    def folders(self, recurse=True, mail=False, parse=True): # XXX mail flag semantic difference?
         """ Return all :class:`folders <Folder>` in store
 
         :param recurse: include all sub-folders
@@ -1293,21 +1293,18 @@ class Store(object):
                     pass
             return True
 
-        # determine root folder
-        if system:
-            root = self._root
-        else:
-            try:
-                if self.public:
-                    ipmsubtreeid = HrGetOneProp(self.mapiobj, PR_IPM_PUBLIC_FOLDERS_ENTRYID).Value
-                else:
-                    ipmsubtreeid = HrGetOneProp(self.mapiobj, PR_IPM_SUBTREE_ENTRYID).Value
-            except MAPIErrorNotFound: # SYSTEM store
-                return
-            root = self.mapiobj.OpenEntry(ipmsubtreeid, IID_IMAPIFolder, MAPI_DEFERRED_ERRORS)
+        # determine subtree
+        try:
+            if self.public:
+                ipmsubtreeid = HrGetOneProp(self.mapiobj, PR_IPM_PUBLIC_FOLDERS_ENTRYID).Value
+            else:
+                ipmsubtreeid = HrGetOneProp(self.mapiobj, PR_IPM_SUBTREE_ENTRYID).Value
+        except MAPIErrorNotFound: # SYSTEM store
+            return
+        subtree = self.mapiobj.OpenEntry(ipmsubtreeid, IID_IMAPIFolder, MAPI_DEFERRED_ERRORS)
 
         # loop over and filter all subfolders 
-        table = root.GetHierarchyTable(0)
+        table = subtree.GetHierarchyTable(0)
         table.SetColumns([PR_ENTRYID], TBL_BATCH)
         table.Restrict(SPropertyRestriction(RELOP_EQ, PR_FOLDER_TYPE, SPropValue(PR_FOLDER_TYPE, FOLDER_GENERIC)), TBL_BATCH)
         for row in table.QueryRows(-1, 0):
@@ -1625,23 +1622,22 @@ class Folder(object):
         :param recurse: include all sub-folders
         """
 
-        if self.mapiobj.GetProps([PR_SUBFOLDERS], MAPI_UNICODE)[0].Value: # XXX no worky?
-            try:
-                table = self.mapiobj.GetHierarchyTable(MAPI_UNICODE)
-            except MAPIErrorNoSupport: # XXX webapp search folder?
-                return
+        try:
+            table = self.mapiobj.GetHierarchyTable(MAPI_UNICODE)
+        except MAPIErrorNoSupport: # XXX webapp search folder?
+            return
 
-            table.SetColumns([PR_ENTRYID], 0)
-            rows = table.QueryRows(-1, 0)
-            for row in rows:
-                subfolder = self.mapiobj.OpenEntry(row[0].Value, None, MAPI_MODIFY)
-                entryid = subfolder.GetProps([PR_ENTRYID], MAPI_UNICODE)[0].Value
-                folder = Folder(self.store, entryid)
-                folder.depth = depth
-                yield folder
-                if recurse:
-                    for subfolder in folder.folders(depth=depth+1):
-                        yield subfolder
+        table.SetColumns([PR_ENTRYID], 0)
+        rows = table.QueryRows(-1, 0)
+        for row in rows:
+            subfolder = self.mapiobj.OpenEntry(row[0].Value, None, MAPI_MODIFY)
+            entryid = subfolder.GetProps([PR_ENTRYID], MAPI_UNICODE)[0].Value
+            folder = Folder(self.store, entryid)
+            folder.depth = depth
+            yield folder
+            if recurse:
+                for subfolder in folder.folders(depth=depth+1):
+                    yield subfolder
 
     def create_folder(self, name, **kwargs):
         mapifolder = self.mapiobj.CreateFolder(FOLDER_GENERIC, unicode(name), u'', None, MAPI_UNICODE)
