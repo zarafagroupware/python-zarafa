@@ -1228,7 +1228,7 @@ class Store(object):
         except MAPIErrorNotFound:
             pass
 
-    def folder(self, key, recurse=True): # XXX sloowowowww
+    def folder(self, key, recurse=False, create=False): # XXX sloowowowww
         """ Return :class:`Folder` with given name or entryid; raise exception if not found
 
             :param key: name or entryid
@@ -1241,19 +1241,7 @@ class Store(object):
             except (MAPIErrorInvalidEntryid, MAPIErrorNotFound, TypeError):
                 pass
 
-        elif '/' in key: # XXX MAPI folders may contain '/' (and '\') in their names.. handle 96-len case
-            subfolder = self.subtree
-            for name in key.split('/'):
-                subfolder = subfolder.folder(name, create=create, recurse=False)
-            return subfolder
-
-        matches = [f for f in self.root.folders(recurse=recurse) if f.entryid == key or f.name == key]
-        if len(matches) == 0:
-            raise ZarafaNotFoundException("no such folder: '%s'" % key)
-        elif len(matches) > 1:
-            raise ZarafaNotFoundException("multiple folders with name/entryid '%s'" % key)
-        else:
-            return matches[0]
+        return self.subtree.folder(key, recurse=recurse, create=create)
 
     def get_folder(self, key):
         """ Return :class:`folder <Folder>` with given name/entryid or *None* if not found """
@@ -1272,50 +1260,16 @@ class Store(object):
 
         """
 
-        # filter function to determine if we return a folder or not
+        # parse=True
         filter_names = None
         if parse and getattr(self.server.options, 'folders', None):
-            filter_names = self.server.options.folders
-
-            if [n for n in filter_names if '/' in n]: # XXX assume all absolute paths 
-                for path in filter_names:
-                    yield self.folder(path)
-                return
-
-        def check_folder(folder): # XXX do we still want this now that we can deal with paths..
-            if filter_names and folder.name not in filter_names:
-                return False
-            if mail:
-                try:
-                    if folder.prop(PR_CONTAINER_CLASS) != 'IPF.Note':
-                        return False
-                except MAPIErrorNotFound:
-                    pass
-            return True
-
-        # determine subtree
-        try:
-            if self.public:
-                ipmsubtreeid = HrGetOneProp(self.mapiobj, PR_IPM_PUBLIC_FOLDERS_ENTRYID).Value
-            else:
-                ipmsubtreeid = HrGetOneProp(self.mapiobj, PR_IPM_SUBTREE_ENTRYID).Value
-        except MAPIErrorNotFound: # SYSTEM store
+            for path in self.server.options.folders:
+                yield self.folder(path)
             return
-        subtree = self.mapiobj.OpenEntry(ipmsubtreeid, IID_IMAPIFolder, MAPI_DEFERRED_ERRORS)
 
-        # loop over and filter all subfolders 
-        table = subtree.GetHierarchyTable(0)
-        table.SetColumns([PR_ENTRYID], TBL_BATCH)
-        table.Restrict(SPropertyRestriction(RELOP_EQ, PR_FOLDER_TYPE, SPropValue(PR_FOLDER_TYPE, FOLDER_GENERIC)), TBL_BATCH)
-        for row in table.QueryRows(-1, 0):
-            folder = Folder(self, row[0].Value)
-            folder.depth = 0
-            if check_folder(folder):
+        for folder in self.subtree.folders(recurse=recurse):
+            if not mail or folder.prop(PR_CONTAINER_CLASS) == 'IPF.Note':
                 yield folder
-            if recurse:
-                for subfolder in folder.folders(depth=1):
-                    if check_folder(subfolder):
-                        yield subfolder
 
     def item(self, entryid):
         """ Return :class:`Item` with given entryid; raise exception of not found """ # XXX better exception?
@@ -1578,7 +1532,7 @@ class Folder(object):
         self.copy(items, folder, _delete=True)
 
     # XXX: almost equal to Store.folder, refactor?
-    def folder(self, key, recurse=True, create=False): # XXX sloowowowww, see also Store.folder
+    def folder(self, key, recurse=False, create=False): # XXX sloowowowww, see also Store.folder
         """ Return :class:`Folder` with given name or entryid; raise exception if not found
 
             :param key: name or entryid
