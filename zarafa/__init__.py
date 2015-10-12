@@ -1244,7 +1244,7 @@ class Store(object):
         elif '/' in key: # XXX MAPI folders may contain '/' (and '\') in their names.. handle 96-len case
             subfolder = self.subtree
             for name in key.split('/'):
-                subfolder = subfolder.folder(name, recurse=False)
+                subfolder = subfolder.folder(name, create=create, recurse=False)
             return subfolder
 
         matches = [f for f in self.folders(system=True, recurse=recurse, parse=False) if f.entryid == key or f.name == key]
@@ -1597,7 +1597,7 @@ class Folder(object):
         elif '/' in key: # XXX MAPI folders may contain '/' (and '\') in their names..
             subfolder = self
             for name in key.split('/'):
-                subfolder = subfolder.folder(name, recurse=False)
+                subfolder = subfolder.folder(name, create=create, recurse=False)
             return subfolder
 
         matches = [f for f in self.folders(recurse=recurse) if f.entryid == key or f.name == key]
