@@ -1436,6 +1436,15 @@ class Folder(object):
             else:
                 return u''
 
+    @property
+    def path(self):
+        names = []
+        parent = self
+        while parent and not parent.entryid == self.store.subtree.entryid:
+            names.append(parent.name)
+            parent = parent.parent
+        return '/'.join(reversed(names))
+
     @name.setter
     def name(self, name):
         self.mapiobj.SetProps([SPropValue(PR_DISPLAY_NAME_W, unicode(name))])
