@@ -1319,6 +1319,16 @@ class Store(object):
         # FIXME: If store is public store, return None?
         return Outofoffice(self)
 
+    @property
+    def orphan(self):
+        if self.public: # XXX
+            for c in self.server.companies():
+                if c.public_store.guid == self.guid:
+                    return False
+            return True
+        else:
+            return self.user.store is None or self.user.store.guid != self.guid
+
     def prop(self, proptag):
         return _prop(self, self.mapiobj, proptag)
 
@@ -2704,8 +2714,12 @@ class User(object):
     @property
     def company(self):
         """ :class:`Company` the user belongs to """
-
-        return Company(self.server, HrGetOneProp(self.mapiobj, PR_EC_COMPANY_NAME_W).Value or u'Default')
+        
+        try:
+            name = HrGetOneProp(self.mapiobj, PR_EC_COMPANY_NAME_W).Value
+        except MAPIErrorNotFound:
+            name = u'Default'
+        return Company(self.server, name)
 
     @property # XXX
     def local(self):
