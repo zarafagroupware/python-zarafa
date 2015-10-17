@@ -1108,6 +1108,12 @@ class Store(object):
         self._root = self.mapiobj.OpenEntry(None, None, 0)
 
     @property
+    def entryid(self):
+        """ Store entryid """
+
+        return bin2hex(self.prop(PR_ENTRYID).value)
+
+    @property
     def public(self):
         return self.prop(PR_MDB_PROVIDER).mapiobj.Value == ZARAFA_STORE_PUBLIC_GUID
 
