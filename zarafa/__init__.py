@@ -2980,7 +2980,7 @@ def daemon_helper(func, service, log):
         else:
             func(service)
     finally:
-        if isinstance(service, Service):
+        if isinstance(service, Service) and service.ql: # XXX move queue stuff into Service
             service.ql.stop()
         if log and service:
             log.info('stopping %s', service.name)
@@ -2996,6 +2996,7 @@ def daemonize(func, options=None, foreground=False, args=[], log=None, config=No
                 service.ql.start()
             func(*args)
         finally:
+            # XXX why not stop service.ql here..?
             if log and service:
                 log.info('stopping %s', service.logname or service.name)
     else:
@@ -3487,6 +3488,7 @@ Encapsulates everything to create a simple Zarafa service, such as:
         self.options, self.args = options, args
         self.name = name
         self.logname = logname
+        self.ql = None
         config2 = CONFIG.copy()
         if config:
             config2.update(config)
