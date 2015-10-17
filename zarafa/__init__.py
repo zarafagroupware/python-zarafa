@@ -174,6 +174,9 @@ RSF_PID_SUGGESTED_CONTACTS = 0x8008
 def _stream(mapiobj, proptag):
     stream = mapiobj.OpenProperty(proptag, IID_IStream, 0, 0)
 
+    if proptag == PR_RTF_COMPRESSED:
+        stream = WrapCompressedRTFStream(stream, 0)
+
     block_size = 0x10000 # 1MB
 
     data = []
@@ -2208,12 +2211,14 @@ class Item(object):
 class Body:
     """ Body """
 
+    # XXX XXX setters!
+
     def __init__(self, mapiitem):
         self.mapiitem = mapiitem
 
     @property
     def text(self):
-        """ Plaintext representation (possibly from archive server) """
+        """ Plain text representation """
 
         try:
             mapiitem = self.mapiitem._arch_item # XXX server already goes 'underwater'.. check details
@@ -2222,12 +2227,22 @@ class Body:
             return u''
 
     @property
-    def html(self): # XXX decode using PR_INTERNET_CPID
-        """ HTML representation (possibly from archive server), in original encoding """
+    def html(self):
+        """ HTML representation """
 
         try:
             mapiitem = self.mapiitem._arch_item
             return _stream(mapiitem, PR_HTML)
+        except MAPIErrorNotFound:
+            return ''
+
+    @property
+    def rtf(self):
+        """ RTF representation """
+
+        try:
+            mapiitem = self.mapiitem._arch_item
+            return _stream(mapiitem, PR_RTF_COMPRESSED)
         except MAPIErrorNotFound:
             return ''
 
