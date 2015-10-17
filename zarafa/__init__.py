@@ -2094,6 +2094,8 @@ class Item(object):
                 try:
                     mailuser = self.server.ab.OpenEntry(eid, IID_IMailUser, 0)
                     email_addr = HrGetOneProp(mailuser, PR_SMTP_ADDRESS_W).Value
+                except MAPIErrorUnknownEntryid: # XXX corrupt data? keep going but log problem
+                    continue
                 except MAPIErrorNotFound: # XXX deleted user, or no email address? or user with multiple entryids..heh?
                     continue
                 except MAPIErrorInterfaceNotSupported: # XXX ZARAFA group?
