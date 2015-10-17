@@ -1431,6 +1431,12 @@ class Folder(object):
         self.mapiobj.SetProps([SPropValue(PR_CONTAINER_CLASS, unicode(value))])
         self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE)
 
+    @property
+    def unread(self):
+        ''' Number of unread items '''
+
+        return self.prop(PR_CONTENT_UNREAD).value
+
     def item(self, entryid):
         """ Return :class:`Item` with given entryid; raise exception of not found """ # XXX better exception?
 
@@ -1512,7 +1518,6 @@ class Folder(object):
             return self.mapiobj.GetContentsTable(self.content_flag).GetRowCount(0) # XXX PR_CONTENT_COUNT, PR_ASSOCIATED_CONTENT_COUNT, PR_CONTENT_UNREAD?
         except MAPIErrorNoSupport:
             return 0
-
 
     def _get_entryids(self, items):
         if isinstance(items, (Item, Folder)):
