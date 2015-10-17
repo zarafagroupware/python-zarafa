@@ -1935,6 +1935,18 @@ class Item(object):
                     att = mapiitem.OpenAttach(row[0].Value, IID_IAttachment, 0)
                     yield Attachment(att)
 
+    def create_attachment(self, name, data):
+        (id_, attach) = self.mapiobj.CreateAttach(None, 0)
+        name = unicode(name)
+        props = [SPropValue(PR_ATTACH_LONG_FILENAME_W, name), SPropValue(PR_ATTACH_METHOD, ATTACH_BY_VALUE)]
+        attach.SetProps(props)
+        stream = attach.OpenProperty(PR_ATTACH_DATA_BIN, IID_IStream, STGM_WRITE|STGM_TRANSACTED, MAPI_MODIFY | MAPI_CREATE)
+        stream.Write(data)
+        stream.Commit(0)
+        attach.SaveChanges(KEEP_OPEN_READWRITE)
+        self.mapiobj.SaveChanges(KEEP_OPEN_READWRITE) # XXX needed?
+        # XXX return attachment..
+
     def header(self, name):
         """ Return transport message header with given name """
 
