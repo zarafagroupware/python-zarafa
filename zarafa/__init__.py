@@ -2648,7 +2648,7 @@ class User(object):
         self.server = server
         try:
             self._ecuser = self.server.sa.GetUser(self.server.sa.ResolveUserName(self._name, MAPI_UNICODE), MAPI_UNICODE)
-        except MAPIErrorNotFound:
+        except (MAPIErrorNotFound, MAPIErrorInvalidParameter): # multi-tenant, but no '@' in username..
             raise ZarafaException("no such user: '%s'" % name)
         self.mapiobj = self.server.mapisession.OpenEntry(self._ecuser.UserID, None, 0)
 
