@@ -698,7 +698,7 @@ Looks at command-line to see if another server address or other related options 
 
         if parse and getattr(self.options, 'users', None):
             for username in self.options.users:
-                yield User(username, self)
+                yield User(username.decode(sys.stdin.encoding), self) # XXX can optparse output unicode?
             return
         try:
             for name in self._companylist():
@@ -783,7 +783,7 @@ Looks at command-line to see if another server address or other related options 
         """
         if parse and getattr(self.options, 'companies', None):
             for name in self.options.companies:
-                yield Company(self, name)
+                yield Company(self, name.decode(sys.stdin.encoding)) # XXX can optparse output unicode?
             return
         try:
             for name in self._companylist():
@@ -1267,7 +1267,7 @@ class Store(object):
         filter_names = None
         if parse and getattr(self.server.options, 'folders', None):
             for path in self.server.options.folders:
-                yield self.folder(path)
+                yield self.folder(path.decode(sys.stdin.encoding)) # XXX can optparse output unicode?
             return
 
         for folder in self.subtree.folders(recurse=recurse):
