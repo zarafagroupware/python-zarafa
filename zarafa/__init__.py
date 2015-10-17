@@ -3084,7 +3084,7 @@ def logger(service, options=None, stdout=False, config=None, name=''):
 def _parse_date(option, opt_str, value, parser):
     setattr(parser.values, option.dest, datetime.datetime.strptime(value, '%Y-%m-%d'))
 
-def parser(options='cskpUPufmvCSlbe'):
+def parser(options='cskpUPufmvCSlbe', usage=None):
     """
 Return OptionParser instance from the standard ``optparse`` module, containing common zarafa command-line options
 
@@ -3131,7 +3131,7 @@ Available options:
 -V, --version: Show program version and exit
 """
 
-    parser = optparse.OptionParser(formatter=optparse.IndentedHelpFormatter(max_help_position=42))
+    parser = optparse.OptionParser(formatter=optparse.IndentedHelpFormatter(max_help_position=42), usage=usage)
 
     if 'c' in options: parser.add_option('-c', '--config', dest='config_file', help='load settings from FILE', metavar='FILE')
 
