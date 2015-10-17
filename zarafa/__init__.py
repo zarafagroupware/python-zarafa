@@ -2676,6 +2676,14 @@ class User(object):
         self.mapiobj = self.server.mapisession.OpenEntry(self._ecuser.UserID, None, 0)
 
     @property
+    def admin(self):
+        return self._ecuser.IsAdmin == 1
+
+    @admin.setter
+    def admin(self, value):
+        self._update(admin=value)
+
+    @property
     def name(self):
         """ Account name """
 
@@ -2817,11 +2825,12 @@ class User(object):
         email = kwargs.get('email', unicode(self._ecuser.Email))
         fullname = kwargs.get('fullname', unicode(self._ecuser.FullName))
         user_class = kwargs.get('user_class', self._ecuser.Class)
+        admin = kwargs.get('admin', self._ecuser.IsAdmin)
 
         if self.active:
             store = self.server.unhook_store(user=self)
         usereid = self.server.sa.SetUser(ECUSER(Username=username, Password=password, Email=email, FullName=fullname,
-                                         Class=user_class, UserID=self._ecuser.UserID), MAPI_UNICODE)
+                                         Class=user_class, UserID=self._ecuser.UserID, IsAdmin=admin), MAPI_UNICODE)
         if self.active:
             storeguid = self.server.hook_store(store=store, user=self)
         self._ecuser = self.server.sa.GetUser(self.server.sa.ResolveUserName(username, MAPI_UNICODE), MAPI_UNICODE)
