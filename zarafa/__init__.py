@@ -1926,7 +1926,6 @@ class Item(object):
         mapiitem = self._arch_item
         table = mapiitem.GetAttachmentTable(MAPI_DEFERRED_ERRORS)
         table.SetColumns([PR_ATTACH_NUM, PR_ATTACH_METHOD], TBL_BATCH)
-        attachments = []
         while True:
             rows = table.QueryRows(50, 0)
             if len(rows) == 0:
@@ -1934,8 +1933,7 @@ class Item(object):
             for row in rows:
                 if row[1].Value == ATTACH_BY_VALUE or (embedded and row[1].Value == ATTACH_EMBEDDED_MSG):
                     att = mapiitem.OpenAttach(row[0].Value, IID_IAttachment, 0)
-                    attachments.append(Attachment(att))
-        return attachments
+                    yield Attachment(att)
 
     def header(self, name):
         """ Return transport message header with given name """
@@ -2009,11 +2007,9 @@ class Item(object):
     def recipients(self):
         """ Return recipient :class:`addresses <Address>` """
 
-        result = []
         for row in self.table(PR_MESSAGE_RECIPIENTS):
             row = dict([(x.proptag, x) for x in row])
-            result.append(Address(self.server, *(row[p].value for p in (PR_ADDRTYPE_W, PR_DISPLAY_NAME_W, PR_EMAIL_ADDRESS_W, PR_ENTRYID))))
-        return result
+            yield Address(self.server, *(row[p].value for p in (PR_ADDRTYPE_W, PR_DISPLAY_NAME_W, PR_EMAIL_ADDRESS_W, PR_ENTRYID)))
 
     @property
     def to(self):
@@ -2855,9 +2851,8 @@ class Quota(object):
     @property
     def recipients(self):
         if self.userid:
-            return [self.server.user(ecuser.Username) for ecuser in self.server.sa.GetQuotaRecipients(self.userid, 0)]
-        else:
-            return []
+            for ecuser in self.server.sa.GetQuotaRecipients(self.userid, 0):
+                yield self.server.user(ecuser.Username)
 
     def __unicode__(self):
         return u'Quota(warning=%s, soft=%s, hard=%s)' % (_bytes_to_human(self.warning_limit), _bytes_to_human(self.soft_limit), _bytes_to_human(self.hard_limit))
