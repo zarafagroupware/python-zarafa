@@ -676,10 +676,16 @@ Looks at command-line to see if another server address or other related options 
 
         return bin2hex(HrGetOneProp(self.mapistore, PR_MAPPING_SIGNATURE).Value)
 
-    def user(self, name):
+    def user(self, name, create=False):
         """ Return :class:`user <User>` with given name; raise exception if not found """
 
-        return User(name, self)
+        try:
+            return User(name, self)
+        except ZarafaNotFoundException:
+            if create:
+                return self.create_user(name)
+            else:
+                raise
 
     def get_user(self, name):
         """ Return :class:`user <User>` with given name or *None* if not found """
@@ -791,7 +797,7 @@ Looks at command-line to see if another server address or other related options 
         except MAPIErrorNoSupport:
             yield Company(self, u'Default')
 
-    def create_company(self, name):
+    def create_company(self, name): # XXX deprecated because of company(create=True)?
         name = unicode(name)
         companyeid = self.sa.CreateCompany(ECCOMPANY(name, None), MAPI_UNICODE)
         return self.company(name)
@@ -1043,13 +1049,17 @@ class Company(object):
             return Store(self.server, mapistore)
         # XXX
 
-    def user(self, name):
+    def user(self, name, create=False):
         """ Return :class:`user <User>` with given name; raise exception if not found """
 
         name = unicode(name)
-        for user in self.users():
+        for user in self.users(): # XXX slow
             if user.name == name:
                 return User(name, self.server)
+        if create:
+            return self.create_user(name)
+        else:
+            raise ZarafaNotFoundException("no such user: '%s'" % name)
 
     def get_user(self, name):
         """ Return :class:`user <User>` with given name or *None* if not found """
@@ -2682,7 +2692,7 @@ class User(object):
         try:
             self._ecuser = self.server.sa.GetUser(self.server.sa.ResolveUserName(self._name, MAPI_UNICODE), MAPI_UNICODE)
         except (MAPIErrorNotFound, MAPIErrorInvalidParameter): # multi-tenant, but no '@' in username..
-            raise ZarafaException("no such user: '%s'" % name)
+            raise ZarafaNotFoundException("no such user: '%s'" % name)
         self.mapiobj = self.server.mapisession.OpenEntry(self._ecuser.UserID, None, 0)
 
     @property
