@@ -1320,9 +1320,19 @@ class Store(object):
         return Outofoffice(self)
 
     @property
+    def company(self):
+        if self.public: 
+            for c in self.server.companies(): # XXX slow
+                if c.public_store.guid == self.guid:
+                    return c
+            # XXX unhooked public store
+        else:
+            return self.user.company
+
+    @property
     def orphan(self):
-        if self.public: # XXX
-            for c in self.server.companies():
+        if self.public:
+            for c in self.server.companies(): # XXX slow
                 if c.public_store.guid == self.guid:
                     return False
             return True
