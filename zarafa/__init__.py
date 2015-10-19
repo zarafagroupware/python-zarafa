@@ -2309,6 +2309,7 @@ class Body:
 class Recurrence:
     def __init__(self, item): # XXX just readable start/end for now
         from dateutil.rrule import WEEKLY, DAILY, MONTHLY, MO, TU, TH, FR, WE, SA, SU, rrule, rruleset
+        from datetime import timedelta
         # TODO: add check if we actually have a recurrence, otherwise we throw a mapi exception which might not be desirable
         self.item = item
         value = item.prop('appointment:33302').value # recurrencestate
@@ -2441,7 +2442,6 @@ class Recurrence:
         self.recurrence_pattern = item.prop('appointment:33330').value
         self.invited = item.prop('appointment:33321').value
 
-
         # FIXME; doesn't dateutil have a list of this?
         rrule_weekdays = {0: SU, 1: MO, 2: TU, 3: WE, 4: TH, 5: FR, 6: SA} # FIXME: remove above
 
@@ -2454,7 +2454,9 @@ class Recurrence:
                     byweekday += (week,)
             # Setup our rule
             rule = rruleset()
-            rule.rrule(rrule(WEEKLY, dtstart=self.start, until=self.end, byweekday=byweekday))
+            # FIXME: add one day, so that we don't miss the last recurrence, since the end date is for example 11-3-2015 on 1:00
+            # But the recurrence is on 8:00 that day and we should include it.
+            rule.rrule(rrule(WEEKLY, dtstart=self.start, until=self.end + timedelta(days=1), byweekday=byweekday))
 
             # Remove deleted ocurrences
             for del_date in self.del_recurrences:
