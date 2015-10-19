@@ -1296,7 +1296,7 @@ class Store(object):
         item = Item() # XXX copy-pasting..
         item.store = self
         item.server = self.server
-        item.mapiobj = _openentry_raw(self.mapiobj, entryid.decode('hex'), MAPI_MODIFY)
+        item.mapiobj = _openentry_raw(self.mapiobj, entryid.decode('hex'), MAPI_MODIFY) # XXX soft-deleted item?
         return item
 
     @property
@@ -1367,7 +1367,7 @@ class Folder(object):
 
     """
 
-    def __init__(self, store, entryid=None, associated=False, mapiobj=None): # XXX entryid not hex-encoded!?
+    def __init__(self, store, entryid=None, associated=False, deleted=False, mapiobj=None): # XXX entryid not hex-encoded!?
         self.store = store
         self.server = store.server
         if mapiobj:
@@ -1379,7 +1379,7 @@ class Folder(object):
                 self.mapiobj = store.mapiobj.OpenEntry(entryid, IID_IMAPIFolder, MAPI_MODIFY)
             except MAPIErrorNoAccess: # XXX XXX
                 self.mapiobj = store.mapiobj.OpenEntry(entryid, IID_IMAPIFolder, 0)
-        self.content_flag = MAPI_ASSOCIATED if associated else 0
+        self.content_flag = MAPI_ASSOCIATED if associated else (SHOW_SOFT_DELETES if deleted else 0) 
 
     @property
     def entryid(self):
@@ -1473,7 +1473,7 @@ class Folder(object):
         item = Item() # XXX copy-pasting..
         item.store = self.store
         item.server = self.server
-        item.mapiobj = _openentry_raw(self.store.mapiobj, entryid.decode('hex'), MAPI_MODIFY)
+        item.mapiobj = _openentry_raw(self.store.mapiobj, entryid.decode('hex'), MAPI_MODIFY | self.content_flag)
         return item
 
     def items(self):
@@ -1493,7 +1493,7 @@ class Folder(object):
                 item = Item()
                 item.store = self.store
                 item.server = self.server
-                item.mapiobj = _openentry_raw(self.store.mapiobj, PpropFindProp(row, PR_ENTRYID).Value, MAPI_MODIFY)
+                item.mapiobj = _openentry_raw(self.store.mapiobj, PpropFindProp(row, PR_ENTRYID).Value, MAPI_MODIFY | self.content_flag)
                 yield item
 
     def create_item(self, eml=None, ics=None, vcf=None, load=None, loads=None, **kwargs): # XXX associated
@@ -1710,6 +1710,10 @@ class Folder(object):
         """ Associated folder containing hidden items """
 
         return Folder(self.store, self._entryid, associated=True)
+
+    @property
+    def deleted(self):
+        return Folder(self.store, self._entryid, deleted=True)
 
     def __iter__(self):
         return self.items()
