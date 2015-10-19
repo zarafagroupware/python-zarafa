@@ -1036,7 +1036,10 @@ class Company(object):
             if pubstore is None:
                 return None
             return Store(self.server, pubstore)
-        publicstoreid = self.server.ems.CreateStoreEntryID(None, self._name, MAPI_UNICODE)
+        try:
+            publicstoreid = self.server.ems.CreateStoreEntryID(None, self._name, MAPI_UNICODE)
+        except MAPIErrorNotFound:
+            return None
         publicstore = self.server.mapisession.OpenMsgStore(0, publicstoreid, None, MDB_WRITE)
         return Store(self.server, publicstore)
 
@@ -1237,16 +1240,6 @@ class Store(object):
 
         return Folder(self, entryid.decode('hex'))
 
-    @property
-    def user(self):
-        """ Store :class:`owner <User>` """
-
-        try:
-            userid = HrGetOneProp(self.mapiobj, PR_MAILBOX_OWNER_ENTRYID).Value
-            return User(self.server.sa.GetUser(userid, MAPI_UNICODE).Username, self.server)
-        except MAPIErrorNotFound:
-            pass
-
     def folder(self, key, recurse=False, create=False): # XXX sloowowowww
         """ Return :class:`Folder` with given name or entryid; raise exception if not found
 
@@ -1330,24 +1323,33 @@ class Store(object):
         return Outofoffice(self)
 
     @property
+    def user(self):
+        """ Store :class:`owner <User>` """
+
+        try:
+            userid = HrGetOneProp(self.mapiobj, PR_MAILBOX_OWNER_ENTRYID).Value # XXX
+            return User(self.server.sa.GetUser(userid, MAPI_UNICODE).Username, self.server)
+        except MAPIErrorNotFound:
+            pass
+
+    @property
     def company(self):
-        if self.public: 
-            for c in self.server.companies(): # XXX slow
-                if c.public_store.guid == self.guid:
-                    return c
-            # XXX unhooked public store
-        else:
-            return self.user.company
+        table = self.server.sa.OpenUserStoresTable(MAPI_UNICODE)
+        table.Restrict(SPropertyRestriction(RELOP_EQ, PR_EC_STOREGUID, SPropValue(PR_EC_STOREGUID, self.guid.decode('hex'))), TBL_BATCH)
+        for row in table.QueryRows(1,0):
+            companyname = PpropFindProp(row, PR_EC_COMPANY_NAME_W)
+            if companyname is None: # XXX single-tenant, improve check..
+                return self.server.companies().next()
+            else:
+                return self.server.company(companyname.Value)
 
     @property
     def orphan(self):
         if self.public:
-            for c in self.server.companies(): # XXX slow
-                if c.public_store.guid == self.guid:
-                    return False
-            return True
+            pubstore = self.company.public_store
+            return (pubstore is None or pubstore.guid != self.guid)
         else:
-            return self.user.store is None or self.user.store.guid != self.guid
+            return (self.user.store is None or self.user.store.guid != self.guid)
 
     def prop(self, proptag):
         return _prop(self, self.mapiobj, proptag)
