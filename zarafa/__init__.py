@@ -880,15 +880,6 @@ Looks at command-line to see if another server address or other related options 
             return Store(self, mapistore)
         # XXX
 
-    def unhook_store(self, user):
-        store = user.store
-        self.sa.UnhookStore(ECSTORE_TYPE_PRIVATE, user.userid.decode('hex'))
-        return store
-
-    def hook_store(self, store, user):
-        self.sa.HookStore(ECSTORE_TYPE_PRIVATE, user.userid.decode('hex'), store.guid.decode('hex'))
-        return store.guid
-
     def sync_users(self):
         # Flush user cache on the server
         self.sa.SyncUsers(None)
@@ -2791,6 +2782,12 @@ class User(object):
             return
         arch_store = arch_session.OpenMsgStore(0, arch_storeid, None, MDB_WRITE)
         return Store(self.server, arch_store) # XXX server?
+
+    def hook(self, store): # XXX add Company.(un)hook for public store
+        self.server.sa.HookStore(ECSTORE_TYPE_PRIVATE, self.userid.decode('hex'), store.guid.decode('hex'))
+
+    def unhook(self):
+        self.server.sa.UnhookStore(ECSTORE_TYPE_PRIVATE, self.userid.decode('hex'))
 
     @property
     def active(self):
