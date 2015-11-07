@@ -5,6 +5,7 @@ import re
 import subprocess
 import datetime
 import zarafa
+import shlex
 delcounter = 0
 
 
@@ -40,7 +41,7 @@ def main():
                         inboxelements += 1
                         print "%s : tagged spam in inbox [Subject: %s]" % (user.name, item.subject)
                         try:
-                            hp = subprocess.Popen(hamcommand, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+                            hp = subprocess.Popen(shlex.split(hamcommand), stdin=subprocess.PIPE, stdout=subprocess.PIPE)
                             learn, ham_output_error = hp.communicate(item.eml())
                         except:
                             print "failed to run [HAM] [%s]" % ham_output_err
@@ -55,7 +56,7 @@ def main():
                     if (not item.header('x-spam-flag')) or (item.header('x-spam-flag') == 'NO'):
                         print "%s : untagged spam [Subject: %s]" % (user.name, item.subject)
                         try:
-                            p = subprocess.Popen(spamcommand, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+                            p = subprocess.Popen(shlex.split(spamcommand), stdin=subprocess.PIPE, stdout=subprocess.PIPE)
                             learn, output_err = p.communicate(item.eml())
                         except:
                             print 'failed to run [%s] [%s]' % (SPAM, output_err)
