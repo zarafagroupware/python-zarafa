@@ -17,6 +17,7 @@ def main():
     (users, allusers, remoteusers, autolearn, autodelete, deleteafter, spamcommand, hamfolder, hammarkertoremove,
      hamfoldercreate, hamcommand, hamlimit, autoham) = getconfig()
     z = zarafa.Server()
+
     if allusers and not users:
         users = []
         for user in z.users(remote=remoteusers):
@@ -25,7 +26,7 @@ def main():
         try:
             user = z.user(username)
             inboxelements = 0
-            print autoham
+
             if autoham:
                 try:
                     nospamfolder = user.store.folder(hamfolder)
@@ -71,7 +72,7 @@ def main():
                             delmsg = 'delete after learn'
                             deletejunk(user, item, delmsg)
                             learncounter += 1
-                        continue
+
                 if autodelete:
                     if item.received.date() < (datetime.date.today() - datetime.timedelta(days=deleteafter)):
                         delmsg = 'autodelete'
@@ -79,6 +80,7 @@ def main():
         except Exception as error:
             print "%s : Unable to open store/item : [%s] [%s]" % (username, username, error)
             continue
+
     print "Summary learned %d SPAM items %d HAM items, deleted %d items" % (learncounter, hamlearncounter, delcounter)
 
 
