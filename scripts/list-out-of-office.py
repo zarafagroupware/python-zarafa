@@ -11,5 +11,3 @@ for user in server.users():
             print 'Start: %s' % oof.start
         if oof.end:
             print 'End: %s' % oof.end
-
-server = zarafa.Server()
