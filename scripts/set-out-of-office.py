@@ -9,6 +9,8 @@ def opt_args(help):
     parser.add_option('--subject', dest='subject', action='store', help='Subject of the Out of Office e-mail')
     parser.add_option('--message', dest='message', action='store', help='Message of the Out of Office e-mail')
     parser.add_option('--mode', dest='mode', action='store', help='Enable or Disable Out of Office')
+    parser.add_option('--start', dest='start', action='store', help='Start date / time')
+    parser.add_option('--end', dest='end', action='store', help='End date / time')
 
     if help:
         parser.print_help()
@@ -26,16 +28,26 @@ def main():
         if options.user and options.mode is None and options.subject is None and options.message is None:
 
             if oof.enabled:
-                print "User %s: Out of Office is enabled" % (options.user)
+                print "User %s:\nOut of Office: enabled" % (options.user)
             else:
-                print "User %s: Out of Office is disabled" % (options.user)
+                print "User %s:\nOut of Office: disabled" % (options.user)
 
-            print "User %s: Subject: (%s)" % (options.user, oof.subject)
-            print "User %s: Message: (%s)" % (options.user, oof.message)
+            print "Subject: %s" % (oof.subject)
+            print "Message: %s" % (oof.message)
+            if oof.start:
+                print "Start time: %s" % (oof.start)
+            if oof.end:
+                print "End time: %s" % (oof.end)
 
         else:
 
             if options.mode == 'enable':
+
+                if not options.start:
+                    oof.start = None
+                if not options.end:
+                    oof.end = None
+
                 oof.enabled = True
                 print "User %s: Enabled Out of Office" % (options.user)
 
@@ -50,8 +62,13 @@ def main():
             if options.message:
                 oof.message = options.message
                 print "User %s: Set message to (%s)" % (options.user, options.message)
+
+            if options.start:
+                print options.start
+
     else:
         opt_args(help=True)
+
 
 if __name__ == '__main__':
     main()
