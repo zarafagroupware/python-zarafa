@@ -1,7 +1,0 @@
-Bugfixes:
- * Support item.prop() for items which need to be streamed in an abstract way
-
-Features:
-
- * Support Groups
- * Distribution lists
